@@ -28,3 +28,4 @@ frontend/dist/
 
 # Local agent/editor settings
 .claude/settings.local.json
+.claude
