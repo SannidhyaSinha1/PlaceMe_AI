@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Local artifacts
+*.db
+*.sqlite3
+faiss_indexes/
+uploads/
+backend/ml_models/eligibility_xgb.json
+celerybeat-schedule*
+# synthetic_dataset.csv IS committed as deterministic seed data
+
+# Node
+node_modules/
+frontend/dist/
+
+# Misc
+.DS_Store
+
+# Local agent/editor settings
+.claude/settings.local.json

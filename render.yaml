@@ -1,0 +1,48 @@
+# Render multi-service deploy (free tier). Frontend goes to Vercel (see
+# frontend/vercel.json). Create an env group "placementor-env" in the Render
+# dashboard holding all the keys from .env.example, then deploy.
+services:
+  # ── FastAPI student API ────────────────────────────────────────────────
+  - type: web
+    name: placementor-fastapi
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r fastapi_app/requirements.txt
+    startCommand: uvicorn fastapi_app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - fromGroup: placementor-env
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+
+  # ── Django admin portal ────────────────────────────────────────────────
+  - type: web
+    name: placementor-admin
+    runtime: python
+    rootDir: backend/admin_portal
+    buildCommand: pip install -r requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate
+    startCommand: gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
+    envVars:
+      - fromGroup: placementor-env
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+
+  # ── Celery worker (AI pipeline + reminders) ────────────────────────────
+  - type: worker
+    name: placementor-celery-worker
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r fastapi_app/requirements.txt
+    startCommand: celery -A fastapi_app.tasks.celery_app worker --loglevel=info --concurrency=2
+    envVars:
+      - fromGroup: placementor-env
+
+  # ── Celery beat (scheduler) ────────────────────────────────────────────
+  - type: worker
+    name: placementor-celery-beat
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r fastapi_app/requirements.txt
+    startCommand: celery -A fastapi_app.tasks.celery_app beat --loglevel=info
+    envVars:
+      - fromGroup: placementor-env

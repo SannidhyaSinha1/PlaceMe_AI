@@ -1,0 +1,134 @@
+"""Application settings.
+
+Every external service is optional: with no env vars at all the API boots on
+a local SQLite file and AI/Gmail/storage features degrade gracefully with
+clear error messages, instead of crashing. Set the corresponding keys (see
+.env.example) to switch each feature on.
+"""
+
+from functools import lru_cache
+from pathlib import Path
+
+from dotenv import load_dotenv
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]  # .../backend
+REPO_ROOT = BACKEND_DIR.parent
+
+# Make keys visible to libraries that read os.environ directly.
+load_dotenv(REPO_ROOT / ".env", override=False)
+load_dotenv(override=False)
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(str(REPO_ROOT / ".env"), ".env"),
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    app_name: str = "PlaceMe AI"
+
+    # Deployment environment: "development" (default) or "production".
+    # Production refuses to boot with insecure defaults (see main.py).
+    environment: str = "development"
+
+    # JWT
+    secret_key: str = "dev-only-secret-change-me"
+    algorithm: str = "HS256"
+    access_token_expire_minutes: int = 60 * 24
+
+    # Key for encrypting sensitive columns (Gmail tokens) at rest.
+    # Falls back to secret_key when unset; set a dedicated value in production.
+    token_encryption_key: str = ""
+
+    # Emails that receive admin rights on registration (comma separated)
+    admin_emails: str = ""
+
+    # Databases
+    supabase_db_url: str = ""
+    mongo_uri: str = ""
+    upstash_redis_url: str = "redis://localhost:6379/0"
+
+    # Google OAuth (Gmail inbox sync)
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_redirect_uri: str = "http://localhost:8000/auth/gmail/callback"
+
+    # LLMs
+    groq_api_key: str = ""
+    gemini_api_key: str = ""
+    groq_model: str = "llama-3.3-70b-versatile"
+    gemini_model: str = "gemini-2.0-flash"
+
+    # Web search
+    tavily_api_key: str = ""
+
+    # File storage
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
+
+    # SMTP reminders
+    gmail_address: str = ""
+    gmail_app_password: str = ""
+
+    # Restrict Gmail sync to emails from this sender only
+    placement_email_sender: str = "helpdesk.cdc@vit.ac.in"
+
+    # How far back to look for placement emails (Gmail search unit)
+    placement_email_since: str = "180d"
+
+    frontend_origin: str = "http://localhost:3000"
+
+    faiss_index_dir: str = str(REPO_ROOT / "faiss_indexes")
+    uploads_dir: str = str(REPO_ROOT / "uploads")
+
+    @property
+    def is_production(self) -> bool:
+        return self.environment.strip().lower() in ("production", "prod")
+
+    @property
+    def using_default_secret(self) -> bool:
+        return self.secret_key == "dev-only-secret-change-me"
+
+    @property
+    def admin_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.admin_emails.split(",") if e.strip()]
+
+    @property
+    def sqlalchemy_url(self) -> str:
+        """Async SQLAlchemy URL: Supabase Postgres, or local SQLite fallback."""
+        url = self.supabase_db_url
+        if not url:
+            return f"sqlite+aiosqlite:///{REPO_ROOT / 'placementor.db'}"
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url
+
+    @property
+    def llm_configured(self) -> bool:
+        return bool(self.groq_api_key or self.gemini_api_key)
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.gmail_address and self.gmail_app_password)
+
+    @property
+    def gmail_oauth_configured(self) -> bool:
+        return bool(self.google_client_id and self.google_client_secret)
+
+    @property
+    def cloudinary_configured(self) -> bool:
+        return bool(
+            self.cloudinary_cloud_name
+            and self.cloudinary_api_key
+            and self.cloudinary_api_secret
+        )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

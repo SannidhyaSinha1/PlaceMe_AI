@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ── Semantic color tokens (channels, for rgb(var() / alpha)) ─────── */
+  :root {
+    --canvas: 248 250 252; /* slate-50  */
+    --surface: 255 255 255; /* white     */
+    --elevated: 255 255 255;
+    --muted: 241 245 249; /* slate-100 */
+    --line: 226 232 240; /* slate-200 */
+    --ink: 15 23 42; /* slate-900 */
+    --ink-soft: 51 65 85; /* slate-700 */
+    --ink-muted: 100 116 139; /* slate-500 */
+    color-scheme: light;
+  }
+
+  .dark {
+    --canvas: 11 15 25; /* deep slate  */
+    --surface: 17 24 39; /* slate-900-ish */
+    --elevated: 30 41 59; /* slate-800   */
+    --muted: 30 41 59; /* slate-800   */
+    --line: 39 51 73; /* soft border */
+    --ink: 226 232 240; /* slate-200   */
+    --ink-soft: 203 213 225; /* slate-300 */
+    --ink-muted: 148 163 184; /* slate-400 */
+    color-scheme: dark;
+  }
+
+  body {
+    @apply bg-canvas text-ink antialiased;
+    font-family: theme("fontFamily.sans");
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-brand-500/60 ring-offset-2 ring-offset-canvas;
+  }
+
+  ::selection {
+    @apply bg-brand-500/30 text-ink;
+  }
+
+  /* Color theme transition (skipped under reduced-motion below) */
+  body,
+  .card,
+  .input,
+  .btn,
+  .chip {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    background-color: rgb(var(--ink-muted) / 0.35);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--ink-muted) / 0.55);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold
+           transition-all duration-200 ease-out
+           focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-soft
+           hover:bg-brand-700 hover:shadow-lift active:translate-y-px active:shadow-soft;
+  }
+  .btn-secondary {
+    @apply btn bg-brand-50 text-brand-700 hover:bg-brand-100
+           dark:bg-brand-500/15 dark:text-brand-300 dark:hover:bg-brand-500/25;
+  }
+  .btn-ghost {
+    @apply btn border border-line bg-surface text-ink-soft shadow-xs
+           hover:bg-muted active:translate-y-px;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+
+  /* ── Surfaces ────────────────────────────────────────────── */
+  .card {
+    @apply rounded-2xl border border-line bg-surface shadow-card;
+  }
+  .card-hover {
+    @apply transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-brand-400/60 hover:shadow-lift;
+  }
+
+  /* ── Forms ───────────────────────────────────────────────── */
+  .input {
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink
+           shadow-xs transition placeholder:text-ink-muted/70
+           focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/30;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wide text-ink-muted;
+  }
+
+  /* ── Badges & chips ──────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-ink-soft;
+  }
+
+  /* ── Loading skeleton ────────────────────────────────────── */
+  .skeleton {
+    @apply relative overflow-hidden rounded-md bg-muted;
+  }
+  .skeleton::after {
+    @apply absolute inset-0 -translate-x-full;
+    content: "";
+    background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.1), transparent);
+    animation: shimmer 1.5s infinite;
+  }
+}
