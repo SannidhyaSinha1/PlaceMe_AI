@@ -16,12 +16,11 @@ from __future__ import annotations
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
-from typing import Optional
 
-from fastapi_app.core.config import get_settings
 from ai_agents import llm_client
+from fastapi_app.core.config import get_settings
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -75,8 +74,8 @@ def _build_vectorstore(company: str, docs: list[str]):
     embeddings = _embeddings()
     if embeddings is None or not docs:
         return None
-    from langchain_community.vectorstores import FAISS
     from langchain.text_splitter import RecursiveCharacterTextSplitter
+    from langchain_community.vectorstores import FAISS
 
     index_path = os.path.join(settings.faiss_index_dir, _safe_name(company))
     if os.path.isdir(index_path):
@@ -119,7 +118,7 @@ def _generate_report(company: str, vectorstore, docs: list[str]) -> dict:
     return {key: snippet for key in _SECTION_QUERIES}
 
 
-async def research_company(company: str, opportunity_id: Optional[int] = None) -> dict:
+async def research_company(company: str, opportunity_id: int | None = None) -> dict:
     """Return a structured report dict; MongoDB-cached by company name."""
     from fastapi_app.core.database import mongo_collection
 
@@ -131,9 +130,12 @@ async def research_company(company: str, opportunity_id: Optional[int] = None) -
             cached["cached"] = True
             return cached
 
-    docs, urls = _tavily_search(company)
-    vectorstore = _build_vectorstore(company, docs)
-    sections = _generate_report(company, vectorstore, docs)
+    # Web search, FAISS/embedding build and the LLM report are all blocking.
+    import asyncio
+
+    docs, urls = await asyncio.to_thread(_tavily_search, company)
+    vectorstore = await asyncio.to_thread(_build_vectorstore, company, docs)
+    sections = await asyncio.to_thread(_generate_report, company, vectorstore, docs)
 
     report = {
         "company_name": company,
@@ -144,7 +146,7 @@ async def research_company(company: str, opportunity_id: Optional[int] = None) -
         "interview_tips": sections.get("interview_tips", ""),
         "hiring_trends": sections.get("hiring_trends", ""),
         "sources": urls,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "cached": False,
     }
 

@@ -9,7 +9,6 @@ and custom commands intact and compilable. Returns the full edited .tex.
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 from ai_agents import llm_client
 

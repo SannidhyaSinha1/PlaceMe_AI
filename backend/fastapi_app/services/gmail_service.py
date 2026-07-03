@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import base64
 import logging
-from typing import Optional
 
 from fastapi_app.core.config import get_settings
 
@@ -64,7 +63,7 @@ def build_auth_url(state: str) -> str:
     return auth_url
 
 
-def exchange_code(code: str, state: Optional[str] = None) -> dict:
+def exchange_code(code: str, state: str | None = None) -> dict:
     """Exchange an auth code for {access_token, refresh_token}."""
     import requests as req
 
@@ -86,7 +85,7 @@ def exchange_code(code: str, state: Optional[str] = None) -> dict:
     }
 
 
-def _credentials(access_token: str, refresh_token: Optional[str]):
+def _credentials(access_token: str, refresh_token: str | None):
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
 
@@ -107,7 +106,7 @@ def _credentials(access_token: str, refresh_token: Optional[str]):
 
 
 def fetch_placement_emails(
-    access_token: str, refresh_token: Optional[str], max_results: int = 100
+    access_token: str, refresh_token: str | None, max_results: int = 100
 ) -> list[dict]:
     """Return [{gmail_message_id, subject, body, received_at, sender}] (blocking)."""
     from googleapiclient.discovery import build
@@ -133,7 +132,7 @@ def fetch_placement_emails(
     return out
 
 
-def fetch_email_by_id(access_token: str, refresh_token: Optional[str], message_id: str) -> dict:
+def fetch_email_by_id(access_token: str, refresh_token: str | None, message_id: str) -> dict:
     """Return a single email by Gmail message ID (blocking)."""
     from googleapiclient.discovery import build
 
@@ -143,7 +142,7 @@ def fetch_email_by_id(access_token: str, refresh_token: Optional[str], message_i
     return _parse_message(msg)
 
 
-def current_access_token(access_token: str, refresh_token: Optional[str]) -> str:
+def current_access_token(access_token: str, refresh_token: str | None) -> str:
     """Return a fresh access token (refreshing if needed) for persistence."""
     return _credentials(access_token, refresh_token).token
 

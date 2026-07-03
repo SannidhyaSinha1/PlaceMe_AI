@@ -39,7 +39,7 @@ export default function LatexTailorModal({ open, onClose, result, loading }) {
       await navigator.clipboard.writeText(latex);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch (e) {
+    } catch {
       /* ignore */
     }
   };

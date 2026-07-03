@@ -48,7 +48,7 @@ export const profileApi = {
 
 // ── Opportunities ─────────────────────────────────────────────────────
 export const opportunitiesApi = {
-  list: (params) => api.get("/opportunities", { params }),
+  list: (params, signal) => api.get("/opportunities", { params, signal }),
   get: (id) => api.get(`/opportunities/${id}`),
   getEmail: (id) => api.get(`/opportunities/${id}/email`),
   create: (data) => api.post("/opportunities", data),

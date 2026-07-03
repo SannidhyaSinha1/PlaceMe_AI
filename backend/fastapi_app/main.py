@@ -139,6 +139,9 @@ async def health():
         # presence. `llm_configured` shows whether keys are set at all.
         "llm": llm_client.llm_available(),
         "llm_configured": settings.llm_configured,
+        # Cumulative call/failure/fallback counters since boot, per provider —
+        # makes silent degradation to heuristics visible.
+        "llm_stats": llm_client.get_stats(),
         "features": {
             "gmail_oauth": settings.gmail_oauth_configured,
             "cloudinary": settings.cloudinary_configured,

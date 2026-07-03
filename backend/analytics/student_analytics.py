@@ -8,8 +8,8 @@ objects or a Celery context.
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from datetime import date, datetime
-from typing import Iterable
 
 
 def compute_dashboard(rows: list[dict]) -> dict:

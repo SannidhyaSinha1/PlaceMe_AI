@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date, timedelta
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -18,7 +17,7 @@ from fastapi_app.models.schemas import (
     OpportunityOut,
 )
 from fastapi_app.models.sql_models import Application, Opportunity, StudentProfile, User
-from fastapi_app.services import pipeline, gmail_service
+from fastapi_app.services import gmail_service, pipeline
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
@@ -30,14 +29,15 @@ _SORTS = {
 }
 
 
-async def _profile_dict(db: AsyncSession, user_id: int) -> Optional[dict]:
+async def _profile_dict(db: AsyncSession, user_id: int) -> dict | None:
     profile = (
         await db.execute(select(StudentProfile).where(StudentProfile.user_id == user_id))
     ).scalar_one_or_none()
     return profile.as_dict() if profile else None
 
 
-def _serialize(opp: Opportunity, verdict: dict, app: Optional[Application]) -> OpportunityOut:
+def _serialize(opp: Opportunity, verdict: dict, app) -> OpportunityOut:
+    """`app` is anything with .id/.status (Application or a column-only Row)."""
     out = OpportunityOut.model_validate(opp)
     out.eligibility = EligibilityOut(**verdict)
     if opp.source_email_id:
@@ -50,14 +50,14 @@ def _serialize(opp: Opportunity, verdict: dict, app: Optional[Application]) -> O
 
 @router.get("", response_model=list[OpportunityOut])
 async def list_opportunities(
-    type: Optional[str] = Query(None, description="Filter by opportunity_type"),
+    type: str | None = Query(None, max_length=50, description="Filter by opportunity_type"),
     eligible_only: bool = False,
-    applied: Optional[bool] = None,
+    applied: bool | None = None,
     upcoming: bool = Query(False, description="Deadline within 14 days"),
-    search: Optional[str] = None,
+    search: str | None = Query(None, max_length=200),
     sort: str = Query("newest", enum=list(_SORTS.keys())),
-    limit: int = Query(50, le=200),
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -79,18 +79,23 @@ async def list_opportunities(
 
     opps = (await db.execute(stmt)).scalars().all()
 
-    # Pull this user's applications once for enrichment.
+    # Pull this user's applications once for enrichment. Column-only select:
+    # loading Application entities would eager-load each one's opportunity too.
     apps = {
-        a.opportunity_id: a
-        for a in (
-            await db.execute(select(Application).where(Application.user_id == user.id))
-        ).scalars()
+        row.opportunity_id: row
+        for row in (
+            await db.execute(
+                select(Application.opportunity_id, Application.id, Application.status)
+                .where(Application.user_id == user.id)
+            )
+        ).all()
     }
     profile = await _profile_dict(db, user.id)
 
+    verdicts = pipeline.evaluate_batch_for_student(opps, profile)
+
     results: list[OpportunityOut] = []
-    for opp in opps:
-        verdict = pipeline.evaluate_for_student(opp, profile)
+    for opp, verdict in zip(opps, verdicts, strict=True):
         app = apps.get(opp.id)
         if eligible_only and verdict.get("status") not in ("Eligible", "Potentially Eligible"):
             continue
@@ -113,11 +118,11 @@ async def get_opportunity(
     verdict = pipeline.evaluate_for_student(opp, profile)
     app = (
         await db.execute(
-            select(Application).where(
+            select(Application.opportunity_id, Application.id, Application.status).where(
                 Application.user_id == user.id, Application.opportunity_id == opp.id
             )
         )
-    ).scalar_one_or_none()
+    ).one_or_none()
     return _serialize(opp, verdict, app)
 
 
@@ -141,7 +146,7 @@ async def get_opportunity_email(
             opp.source_email_id,
         )
     except Exception as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Gmail fetch failed: {exc}")
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Gmail fetch failed: {exc}") from exc
     return email
 
 

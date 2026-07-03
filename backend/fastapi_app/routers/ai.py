@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import asyncio
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
@@ -17,6 +18,7 @@ from ai_agents import (
     resume_tailor,
 )
 from fastapi_app.core.database import get_db, mongo_collection
+from fastapi_app.core.ratelimit import RateLimit
 from fastapi_app.core.security import get_current_user, require_complete_profile
 from fastapi_app.models.schemas import (
     CareerAdviceOut,
@@ -31,7 +33,10 @@ from fastapi_app.models.schemas import (
 from fastapi_app.models.sql_models import Application, Opportunity, StudentProfile, User
 from fastapi_app.services import pipeline
 
-router = APIRouter(prefix="/ai", tags=["ai"])
+# All AI endpoints share one bucket: LLM calls are the expensive resource.
+_ai_limit = Depends(RateLimit("30/minute", scope="ai"))
+
+router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[_ai_limit])
 
 
 async def _load(db: AsyncSession, user: User, opp_id: int):
@@ -62,7 +67,9 @@ def _slug(text: str | None) -> str:
 @router.post("/extract", response_model=ExtractOut)
 async def extract(payload: ExtractIn, _: User = Depends(get_current_user)):
     """Run the extractor + classifier on arbitrary email text (demo/manual use)."""
-    return ExtractOut(**pipeline.extract_and_classify(payload.subject, payload.body))
+    # LLM chains are sync (with retry sleeps) — run them off the event loop.
+    data = await asyncio.to_thread(pipeline.extract_and_classify, payload.subject, payload.body)
+    return ExtractOut(**data)
 
 
 @router.post("/resume/{opp_id}", response_model=ResumeAnalysisOut)
@@ -70,8 +77,9 @@ async def optimize_resume(
     opp_id: int, user: User = Depends(require_complete_profile), db: AsyncSession = Depends(get_db)
 ):
     opp, profile = await _load(db, user, opp_id)
-    analysis = resume_optimizer.analyze_resume(
-        profile.resume_parsed, _job_description(opp), opp.required_skills or []
+    analysis = await asyncio.to_thread(
+        resume_optimizer.analyze_resume,
+        profile.resume_parsed, _job_description(opp), opp.required_skills or [],
     )
     await _store_ai_content(user.id, opp_id, "resume_analysis", analysis)
     return ResumeAnalysisOut(**analysis)
@@ -113,7 +121,8 @@ async def tailor_resume_latex(
             "Add your résumé's LaTeX source in your Profile to tailor it.",
         )
 
-    result = latex_tailor.tailor_latex(
+    result = await asyncio.to_thread(
+        latex_tailor.tailor_latex,
         profile.resume_latex,
         {**opp.as_dict(), "id": opp.id},
         opp.required_skills or [],
@@ -173,7 +182,9 @@ async def research(
 
 
 @router.get("/recommend", response_model=CareerAdviceOut)
-async def recommend(user: User = Depends(require_complete_profile), db: AsyncSession = Depends(get_db)):
+async def recommend(
+    user: User = Depends(require_complete_profile), db: AsyncSession = Depends(get_db),
+):
     profile = (
         await db.execute(select(StudentProfile).where(StudentProfile.user_id == user.id))
     ).scalar_one_or_none()
@@ -196,8 +207,8 @@ async def recommend(user: User = Depends(require_complete_profile), db: AsyncSes
         for a in apps
     ]
     demand = student_analytics.skill_demand(history)
-    advice = career_recommender.recommend(
-        profile.as_dict() if profile else {}, history, demand
+    advice = await asyncio.to_thread(
+        career_recommender.recommend, profile.as_dict() if profile else {}, history, demand
     )
     return CareerAdviceOut(**advice)
 
@@ -213,7 +224,7 @@ async def _store_ai_content(user_id: int, opp_id: int, content_type: str, data: 
         "content": data,
         "ats_score": data.get("ats_score"),
         "skill_gaps": data.get("skill_gaps"),
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
     }
     try:
         await col.update_one(

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -22,7 +22,7 @@ def dispatch_reminders() -> dict:
 
 
 async def _dispatch_reminders() -> dict:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     sent = 0
     async with SessionLocal() as db:
         due = (

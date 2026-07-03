@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from functools import lru_cache
-from typing import Optional
 
 from ai_agents import llm_client
 
@@ -68,7 +67,7 @@ def classify(subject: str, body: str) -> dict:
     return _keyword_classify(text)
 
 
-def _llm_classify(text: str) -> Optional[str]:
+def _llm_classify(text: str) -> str | None:
     if not llm_client.llm_available():
         return None
     try:

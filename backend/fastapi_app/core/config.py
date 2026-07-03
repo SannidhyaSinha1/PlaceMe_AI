@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Falls back to secret_key when unset; set a dedicated value in production.
     token_encryption_key: str = ""
 
+    # Per-IP rate limiting on auth/AI/sync endpoints (in-memory, no Redis).
+    rate_limit_enabled: bool = True
+
     # Emails that receive admin rights on registration (comma separated)
     admin_emails: str = ""
 

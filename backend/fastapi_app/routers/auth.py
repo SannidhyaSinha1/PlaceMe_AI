@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi_app.core.config import get_settings
 from fastapi_app.core.database import get_db
+from fastapi_app.core.ratelimit import RateLimit
 from fastapi_app.core.security import (
     create_access_token,
     decode_token,
@@ -26,18 +28,29 @@ settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _user_out(user: User) -> UserOut:
+def _user_out(user: User, profile: StudentProfile | None) -> UserOut:
     return UserOut(
         id=user.id,
         email=user.email,
         is_admin=user.is_admin,
         gmail_connected=bool(user.gmail_refresh_token),
-        profile_complete=bool(user.profile and user.profile.profile_complete),
+        profile_complete=bool(profile and profile.profile_complete),
         created_at=user.created_at,
     )
 
 
-@router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
+async def _load_profile(db: AsyncSession, user_id: int) -> StudentProfile | None:
+    return (
+        await db.execute(select(StudentProfile).where(StudentProfile.user_id == user_id))
+    ).scalar_one_or_none()
+
+
+@router.post(
+    "/register",
+    response_model=TokenOut,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(RateLimit("5/minute", scope="auth-register"))],
+)
 async def register(payload: RegisterIn, db: AsyncSession = Depends(get_db)):
     existing = (
         await db.execute(select(User).where(User.email == payload.email.lower()))
@@ -45,34 +58,43 @@ async def register(payload: RegisterIn, db: AsyncSession = Depends(get_db)):
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
 
+    # bcrypt is ~100ms of CPU — keep it off the event loop.
+    password_hash = await asyncio.to_thread(hash_password, payload.password)
     user = User(
         email=payload.email.lower(),
-        password_hash=hash_password(payload.password),
+        password_hash=password_hash,
         is_admin=payload.email.lower() in settings.admin_email_list,
     )
     db.add(user)
     await db.flush()
-    db.add(StudentProfile(user_id=user.id))
+    profile = StudentProfile(user_id=user.id)
+    db.add(profile)
     await db.commit()
     await db.refresh(user)
     token = create_access_token(user.id, is_admin=user.is_admin)
-    return TokenOut(access_token=token, user=_user_out(user))
+    return TokenOut(access_token=token, user=_user_out(user, profile))
 
 
-@router.post("/login", response_model=TokenOut)
+@router.post(
+    "/login",
+    response_model=TokenOut,
+    dependencies=[Depends(RateLimit("10/minute", scope="auth-login"))],
+)
 async def login(payload: LoginIn, db: AsyncSession = Depends(get_db)):
     user = (
         await db.execute(select(User).where(User.email == payload.email.lower()))
     ).scalar_one_or_none()
-    if not user or not verify_password(payload.password, user.password_hash):
+    if not user or not await asyncio.to_thread(
+        verify_password, payload.password, user.password_hash
+    ):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
     token = create_access_token(user.id, is_admin=user.is_admin)
-    return TokenOut(access_token=token, user=_user_out(user))
+    return TokenOut(access_token=token, user=_user_out(user, await _load_profile(db, user.id)))
 
 
 @router.get("/me", response_model=UserOut)
-async def me(user: User = Depends(get_current_user)):
-    return _user_out(user)
+async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    return _user_out(user, await _load_profile(db, user.id))
 
 
 # ── Gmail OAuth ────────────────────────────────────────────────────────────
@@ -107,7 +129,7 @@ async def gmail_callback(
         tokens = gmail_service.exchange_code(code, state=state)
     except Exception as exc:  # noqa: BLE001
         logger.warning("OAuth code exchange failed: %s", exc)
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "OAuth exchange failed")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "OAuth exchange failed") from exc
 
     user.gmail_access_token = tokens.get("access_token")
     if tokens.get("refresh_token"):

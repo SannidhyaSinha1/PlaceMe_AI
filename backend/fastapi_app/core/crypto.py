@@ -19,7 +19,6 @@ import base64
 import hashlib
 import logging
 from functools import lru_cache
-from typing import Optional
 
 from sqlalchemy import Text
 from sqlalchemy.types import TypeDecorator
@@ -44,7 +43,7 @@ def _fernet():
     return Fernet(key)
 
 
-def encrypt(value: Optional[str]) -> Optional[str]:
+def encrypt(value: str | None) -> str | None:
     if value is None:
         return None
     fernet = _fernet()
@@ -53,7 +52,7 @@ def encrypt(value: Optional[str]) -> Optional[str]:
     return fernet.encrypt(value.encode()).decode()
 
 
-def decrypt(value: Optional[str]) -> Optional[str]:
+def decrypt(value: str | None) -> str | None:
     if value is None:
         return None
     fernet = _fernet()

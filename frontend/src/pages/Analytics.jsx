@@ -31,7 +31,9 @@ export default function Analytics() {
     try {
       const { data } = await aiApi.recommend();
       setAdvice(data);
-    } catch (_) {}
+    } catch {
+      /* advice is optional — ignore failures */
+    }
     setLoadingAdvice(false);
   };
 

@@ -1,7 +1,6 @@
 """Pydantic v2 request/response schemas."""
 
 from datetime import date, datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
@@ -27,7 +26,7 @@ class UserOut(ORMModel):
     is_admin: bool = False
     gmail_connected: bool = False
     profile_complete: bool = False
-    created_at: Optional[datetime] = None
+    created_at: datetime | None = None
 
 
 class TokenOut(BaseModel):
@@ -38,32 +37,33 @@ class TokenOut(BaseModel):
 
 # ── Profile ───────────────────────────────────────────────────────────────
 class ProfileIn(BaseModel):
-    name: Optional[str] = None
-    college: Optional[str] = None
-    branch: Optional[str] = None
-    current_year: Optional[int] = Field(None, ge=1, le=6)
-    cgpa: Optional[float] = Field(None, ge=0, le=10)
-    tenth_pct: Optional[float] = Field(None, ge=0, le=100)
-    twelfth_pct: Optional[float] = Field(None, ge=0, le=100)
-    active_backlogs: Optional[int] = Field(None, ge=0)
-    skills: Optional[list[str]] = None
-    resume_latex: Optional[str] = None
+    # String caps match the DB column sizes so writes can't fail downstream.
+    name: str | None = Field(None, max_length=255)
+    college: str | None = Field(None, max_length=255)
+    branch: str | None = Field(None, max_length=100)
+    current_year: int | None = Field(None, ge=1, le=6)
+    cgpa: float | None = Field(None, ge=0, le=10)
+    tenth_pct: float | None = Field(None, ge=0, le=100)
+    twelfth_pct: float | None = Field(None, ge=0, le=100)
+    active_backlogs: int | None = Field(None, ge=0, le=50)
+    skills: list[str] | None = Field(None, max_length=100)
+    resume_latex: str | None = Field(None, max_length=200_000)
 
 
 class ProfileOut(ORMModel):
     id: int
-    name: Optional[str] = None
-    college: Optional[str] = None
-    branch: Optional[str] = None
-    current_year: Optional[int] = None
-    cgpa: Optional[float] = None
-    tenth_pct: Optional[float] = None
-    twelfth_pct: Optional[float] = None
-    active_backlogs: Optional[int] = None
-    skills: Optional[list[str]] = None
-    resume_url: Optional[str] = None
-    resume_parsed: Optional[dict] = None
-    resume_latex: Optional[str] = None
+    name: str | None = None
+    college: str | None = None
+    branch: str | None = None
+    current_year: int | None = None
+    cgpa: float | None = None
+    tenth_pct: float | None = None
+    twelfth_pct: float | None = None
+    active_backlogs: int | None = None
+    skills: list[str] | None = None
+    resume_url: str | None = None
+    resume_parsed: dict | None = None
+    resume_latex: str | None = None
     profile_complete: bool = False
 
 
@@ -71,41 +71,41 @@ class ProfileOut(ORMModel):
 class EligibilityOut(BaseModel):
     status: str
     reasons: list[str] = []
-    score: Optional[float] = None
+    score: float | None = None
 
 
 class OpportunityIn(BaseModel):
     company_name: str
-    role: Optional[str] = None
+    role: str | None = None
     opportunity_type: str = "Other"
-    description: Optional[str] = None
-    deadline: Optional[date] = None
-    salary_stipend: Optional[str] = None
-    job_location: Optional[str] = None
+    description: str | None = None
+    deadline: date | None = None
+    salary_stipend: str | None = None
+    job_location: str | None = None
     required_skills: list[str] = []
     eligibility_criteria: dict = {}
 
 
 class OpportunityOut(ORMModel):
     id: int
-    company_name: Optional[str] = None
-    role: Optional[str] = None
+    company_name: str | None = None
+    role: str | None = None
     opportunity_type: str = "Other"
-    description: Optional[str] = None
-    deadline: Optional[date] = None
-    salary_stipend: Optional[str] = None
-    job_location: Optional[str] = None
-    required_skills: Optional[list[str]] = None
-    eligibility_criteria: Optional[dict] = None
+    description: str | None = None
+    deadline: date | None = None
+    salary_stipend: str | None = None
+    job_location: str | None = None
+    required_skills: list[str] | None = None
+    eligibility_criteria: dict | None = None
     source: str = "manual"
-    source_email_id: Optional[str] = None
-    created_at: Optional[datetime] = None
+    source_email_id: str | None = None
+    created_at: datetime | None = None
     # Enriched per-user fields (not DB columns)
-    eligibility: Optional[EligibilityOut] = None
-    application_id: Optional[int] = None
-    application_status: Optional[str] = None
+    eligibility: EligibilityOut | None = None
+    application_id: int | None = None
+    application_status: str | None = None
     # Direct Gmail link to the source email (None for manually-added opportunities)
-    email_link: Optional[str] = None
+    email_link: str | None = None
 
 
 # ── Applications ──────────────────────────────────────────────────────────
@@ -114,27 +114,27 @@ class ApplicationCreate(BaseModel):
 
 
 class StatusUpdate(BaseModel):
-    status: str
-    notes: Optional[str] = None
+    status: str = Field(max_length=50)
+    notes: str | None = Field(None, max_length=5_000)
 
 
 class ApplicationOut(ORMModel):
     id: int
     status: str
-    eligibility_status: Optional[str] = None
-    eligibility_reasons: Optional[list] = None
-    eligibility_score: Optional[float] = None
-    cover_letter_url: Optional[str] = None
-    notes: Optional[str] = None
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
+    eligibility_status: str | None = None
+    eligibility_reasons: list | None = None
+    eligibility_score: float | None = None
+    cover_letter_url: str | None = None
+    notes: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     opportunity: OpportunityOut
 
 
 # ── AI ────────────────────────────────────────────────────────────────────
 class ExtractIn(BaseModel):
-    subject: str = ""
-    body: str
+    subject: str = Field("", max_length=1_000)
+    body: str = Field(max_length=50_000)
 
 
 class ClassificationOut(BaseModel):
@@ -144,21 +144,21 @@ class ClassificationOut(BaseModel):
 
 
 class ExtractOut(BaseModel):
-    company_name: Optional[str] = None
-    role: Optional[str] = None
+    company_name: str | None = None
+    role: str | None = None
     opportunity_type: str = "Other"
-    deadline: Optional[str] = None
-    salary_stipend: Optional[str] = None
-    job_location: Optional[str] = None
+    deadline: str | None = None
+    salary_stipend: str | None = None
+    job_location: str | None = None
     required_skills: list[str] = []
-    min_cgpa: Optional[float] = None
-    allowed_branches: Optional[list[str]] = None
-    allowed_years: Optional[list[int]] = None
-    min_tenth: Optional[float] = None
-    min_twelfth: Optional[float] = None
-    no_backlogs_required: Optional[bool] = None
-    summary: Optional[str] = None
-    classification: Optional[ClassificationOut] = None
+    min_cgpa: float | None = None
+    allowed_branches: list[str] | None = None
+    allowed_years: list[int] | None = None
+    min_tenth: float | None = None
+    min_twelfth: float | None = None
+    no_backlogs_required: bool | None = None
+    summary: str | None = None
+    classification: ClassificationOut | None = None
 
 
 class ResumeAnalysisOut(BaseModel):
@@ -167,19 +167,19 @@ class ResumeAnalysisOut(BaseModel):
     missing_keywords: list[str] = []
     skill_gaps: list[str] = []
     suggestions: list[str] = []
-    tailored_summary: Optional[str] = None
+    tailored_summary: str | None = None
 
 
 class CoverLetterOut(BaseModel):
     text: str
-    pdf_url: Optional[str] = None
+    pdf_url: str | None = None
 
 
 class TailoredResumeOut(BaseModel):
-    pdf_url: Optional[str] = None
+    pdf_url: str | None = None
     highlighted: list[str] = []
     suggestions: list[str] = []
-    ats_score: Optional[int] = None
+    ats_score: int | None = None
     note: str = ""
 
 
@@ -198,7 +198,7 @@ class ResearchOut(BaseModel):
     hiring_trends: str = ""
     sources: list[str] = []
     cached: bool = False
-    generated_at: Optional[str] = None
+    generated_at: str | None = None
 
 
 class CareerAdviceOut(BaseModel):
@@ -219,14 +219,14 @@ class AnalyticsDashboardOut(BaseModel):
 
 
 class AnalyticsChartsOut(BaseModel):
-    status_pie: Optional[str] = None  # base64 PNG
-    skill_gap_bar: Optional[str] = None  # base64 PNG
+    status_pie: str | None = None  # base64 PNG
+    skill_gap_bar: str | None = None  # base64 PNG
 
 
 # ── Announcements ─────────────────────────────────────────────────────────
 class AnnouncementOut(ORMModel):
     id: int
     title: str
-    body: Optional[str] = None
-    created_by: Optional[str] = None
-    created_at: Optional[datetime] = None
+    body: str | None = None
+    created_by: str | None = None
+    created_at: datetime | None = None

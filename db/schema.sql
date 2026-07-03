@@ -83,3 +83,10 @@ CREATE INDEX IF NOT EXISTS idx_opportunities_deadline ON opportunities (deadline
 CREATE INDEX IF NOT EXISTS idx_opportunities_company ON opportunities (company_name);
 CREATE INDEX IF NOT EXISTS idx_applications_user ON applications (user_id);
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders (remind_at) WHERE sent = FALSE;
+
+-- Hot-path indexes (Alembic migration 0002 mirrors these):
+-- FK joins + cascade scans, the type filter, and the default "newest" sort.
+CREATE INDEX IF NOT EXISTS ix_applications_opportunity_id ON applications (opportunity_id);
+CREATE INDEX IF NOT EXISTS ix_opportunities_opportunity_type ON opportunities (opportunity_type);
+CREATE INDEX IF NOT EXISTS ix_opportunities_created_at ON opportunities (created_at);
+CREATE INDEX IF NOT EXISTS ix_reminders_application_id ON reminders (application_id);

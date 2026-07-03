@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import io
 import logging
+import threading
 
 import matplotlib
 
@@ -12,6 +13,10 @@ matplotlib.use("Agg")  # headless backend — must precede pyplot import
 import matplotlib.pyplot as plt  # noqa: E402
 
 logger = logging.getLogger(__name__)
+
+# pyplot keeps global state and is not thread-safe; callers run these chart
+# functions in worker threads, so serialize figure creation/teardown.
+_PLT_LOCK = threading.Lock()
 
 _PALETTE = ["#6366f1", "#22c55e", "#f59e0b", "#3b82f6", "#10b981", "#ef4444", "#8b5cf6"]
 
@@ -47,19 +52,20 @@ def status_pie_chart(status_counts: dict, dark: bool = False) -> str | None:
         fg = _fg(dark)
         labels = list(status_counts.keys())
         values = list(status_counts.values())
-        fig, ax = plt.subplots(figsize=(6, 4))
-        _, texts, autotexts = ax.pie(
-            values, labels=labels, autopct="%1.0f%%",
-            colors=_PALETTE[: len(values)], startangle=140,
-            textprops={"fontsize": 10, "color": fg},
-        )
-        # Percentages sit on the coloured wedges → keep them white for contrast.
-        for at in autotexts:
-            at.set_color("#ffffff")
-            at.set_fontweight("bold")
-        ax.set_title("Application Status", fontsize=13, weight="bold", color=fg)
-        ax.axis("equal")
-        return _to_b64(fig)
+        with _PLT_LOCK:
+            fig, ax = plt.subplots(figsize=(6, 4))
+            _, texts, autotexts = ax.pie(
+                values, labels=labels, autopct="%1.0f%%",
+                colors=_PALETTE[: len(values)], startangle=140,
+                textprops={"fontsize": 10, "color": fg},
+            )
+            # Percentages sit on the coloured wedges → keep them white for contrast.
+            for at in autotexts:
+                at.set_color("#ffffff")
+                at.set_fontweight("bold")
+            ax.set_title("Application Status", fontsize=13, weight="bold", color=fg)
+            ax.axis("equal")
+            return _to_b64(fig)
     except Exception as exc:  # noqa: BLE001
         logger.warning("status_pie_chart failed: %s", exc)
         return None
@@ -72,15 +78,16 @@ def skill_gap_bar_chart(skill_demand: list[dict], dark: bool = False) -> str | N
         fg = _fg(dark)
         skills = [d["skill"] for d in skill_demand][::-1]
         counts = [d["count"] for d in skill_demand][::-1]
-        fig, ax = plt.subplots(figsize=(6, max(3, len(skills) * 0.45)))
-        ax.barh(skills, counts, color="#6366f1")
-        ax.set_title("Most In-Demand Skills (Gaps)", fontsize=13, weight="bold", color=fg)
-        ax.set_xlabel("Opportunities requiring it", color=fg)
-        _style_axes(ax, fg)
-        for i, v in enumerate(counts):
-            ax.text(v + 0.05, i, str(v), va="center", fontsize=9, color=fg)
-        fig.tight_layout()
-        return _to_b64(fig)
+        with _PLT_LOCK:
+            fig, ax = plt.subplots(figsize=(6, max(3, len(skills) * 0.45)))
+            ax.barh(skills, counts, color="#6366f1")
+            ax.set_title("Most In-Demand Skills (Gaps)", fontsize=13, weight="bold", color=fg)
+            ax.set_xlabel("Opportunities requiring it", color=fg)
+            _style_axes(ax, fg)
+            for i, v in enumerate(counts):
+                ax.text(v + 0.05, i, str(v), va="center", fontsize=9, color=fg)
+            fig.tight_layout()
+            return _to_b64(fig)
     except Exception as exc:  # noqa: BLE001
         logger.warning("skill_gap_bar_chart failed: %s", exc)
         return None

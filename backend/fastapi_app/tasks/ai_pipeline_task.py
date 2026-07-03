@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -40,7 +40,7 @@ def research_company(self, opportunity_id: int):
     try:
         return asyncio.run(_research(opportunity_id))
     except Exception as exc:  # noqa: BLE001
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc
 
 
 async def _research(opportunity_id: int):
@@ -56,7 +56,7 @@ def optimize_resume(self, user_id: int, opportunity_id: int):
     try:
         return asyncio.run(_optimize_resume(user_id, opportunity_id))
     except Exception as exc:  # noqa: BLE001
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc
 
 
 async def _optimize_resume(user_id: int, opportunity_id: int):
@@ -84,7 +84,7 @@ def generate_cover_letter(self, user_id: int, opportunity_id: int):
     try:
         return asyncio.run(_generate_cover_letter(user_id, opportunity_id))
     except Exception as exc:  # noqa: BLE001
-        raise self.retry(exc=exc)
+        raise self.retry(exc=exc) from exc
 
 
 async def _generate_cover_letter(user_id: int, opportunity_id: int):
@@ -170,7 +170,7 @@ async def _store_ai(user_id: int, opp_id: int, content_type: str, data: dict):
                     "content": data,
                     "ats_score": data.get("ats_score"),
                     "skill_gaps": data.get("skill_gaps"),
-                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "generated_at": datetime.now(UTC).isoformat(),
                 }
             },
             upsert=True,

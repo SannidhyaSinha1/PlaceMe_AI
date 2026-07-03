@@ -12,7 +12,6 @@ from __future__ import annotations
 import logging
 import time
 from functools import lru_cache
-from typing import Optional
 
 from fastapi_app.core.config import get_settings
 
@@ -80,6 +79,25 @@ def _is_rate_limit(exc: Exception) -> bool:
     )
 
 
+# Cumulative counters since boot — surfaced on /health so degraded providers
+# are visible instead of silent. Plain dict mutation is atomic enough for
+# counters (GIL); exactness under heavy threading isn't required here.
+_stats: dict = {"calls": 0, "successes": 0, "failures": 0, "fallback_successes": 0,
+                "by_provider": {}, "last_error": None}
+
+
+def get_stats() -> dict:
+    return {**_stats, "by_provider": dict(_stats["by_provider"])}
+
+
+def _record(provider: str, ok: bool, latency_ms: float) -> None:
+    p = _stats["by_provider"].setdefault(
+        provider, {"successes": 0, "failures": 0, "total_latency_ms": 0.0}
+    )
+    p["successes" if ok else "failures"] += 1
+    p["total_latency_ms"] += latency_ms
+
+
 def invoke_with_fallback(chain, payload: dict, *, max_retries: int = 3):
     """Run a LangChain runnable on Groq with backoff, falling back to Gemini.
 
@@ -92,21 +110,40 @@ def invoke_with_fallback(chain, payload: dict, *, max_retries: int = 3):
     if not providers:
         raise LLMUnavailable("No LLM configured (set GROQ_API_KEY or GEMINI_API_KEY)")
 
-    last_exc: Optional[Exception] = None
-    for provider in providers:
+    _stats["calls"] += 1
+    last_exc: Exception | None = None
+    for p_idx, provider in enumerate(providers):
+        pname = provider.__class__.__name__
         runnable = build(provider) if build else chain
         for attempt in range(max_retries):
+            start = time.perf_counter()
             try:
-                return runnable.invoke(payload)
+                result = runnable.invoke(payload)
+                latency_ms = (time.perf_counter() - start) * 1000
+                _record(pname, True, latency_ms)
+                _stats["successes"] += 1
+                if p_idx > 0:
+                    _stats["fallback_successes"] += 1
+                logger.info(
+                    "llm ok provider=%s attempt=%d fallback=%s latency_ms=%.0f",
+                    pname, attempt + 1, p_idx > 0, latency_ms,
+                )
+                return result
             except Exception as exc:  # noqa: BLE001 - provider-agnostic
+                latency_ms = (time.perf_counter() - start) * 1000
+                _record(pname, False, latency_ms)
                 last_exc = exc
-                if _is_rate_limit(exc) and attempt < max_retries - 1:
+                _stats["last_error"] = f"{pname}: {exc}"[:300]
+                rate_limited = _is_rate_limit(exc)
+                logger.warning(
+                    "llm error provider=%s attempt=%d rate_limited=%s latency_ms=%.0f err=%s",
+                    pname, attempt + 1, rate_limited, latency_ms, exc,
+                )
+                if rate_limited and attempt < max_retries - 1:
                     backoff = 2**attempt
                     logger.warning("LLM rate-limited, retrying in %ss", backoff)
                     time.sleep(backoff)
                     continue
-                logger.warning(
-                    "LLM provider %s failed: %s", provider.__class__.__name__, exc
-                )
                 break  # move to next provider
+    _stats["failures"] += 1
     raise LLMUnavailable(f"All LLM providers failed: {last_exc}")

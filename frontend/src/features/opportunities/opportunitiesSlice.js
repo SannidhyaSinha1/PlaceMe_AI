@@ -3,7 +3,7 @@ import { opportunitiesApi } from "../../services/api";
 
 export const fetchOpportunities = createAsyncThunk(
   "opportunities/fetch",
-  async (_, { getState, rejectWithValue }) => {
+  async (_, { getState, rejectWithValue, signal }) => {
     const { filters } = getState().opportunities;
     const params = { sort: filters.sort, limit: filters.limit, offset: filters.offset };
     if (filters.type) params.type = filters.type;
@@ -12,7 +12,8 @@ export const fetchOpportunities = createAsyncThunk(
     if (filters.upcoming) params.upcoming = true;
     if (filters.search) params.search = filters.search;
     try {
-      const { data } = await opportunitiesApi.list(params);
+      // The abort signal cancels the HTTP request when a newer fetch starts.
+      const { data } = await opportunitiesApi.list(params, signal);
       return data;
     } catch (e) {
       return rejectWithValue(e.response?.data?.detail || "Failed to load opportunities");
@@ -55,14 +56,18 @@ const opportunitiesSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchOpportunities.pending, (state) => {
+      .addCase(fetchOpportunities.pending, (state, { meta }) => {
         state.status = "loading";
+        state.latestRequestId = meta.requestId;
       })
-      .addCase(fetchOpportunities.fulfilled, (state, { payload }) => {
+      .addCase(fetchOpportunities.fulfilled, (state, { payload, meta }) => {
+        // Ignore out-of-order responses so a stale fetch can't overwrite a newer one.
+        if (meta.requestId !== state.latestRequestId) return;
         state.status = "succeeded";
         state.items = payload;
       })
-      .addCase(fetchOpportunities.rejected, (state, { payload }) => {
+      .addCase(fetchOpportunities.rejected, (state, { payload, meta }) => {
+        if (meta.requestId !== state.latestRequestId || meta.aborted) return;
         state.status = "failed";
         state.error = payload;
       })

@@ -1,19 +1,26 @@
-import { useEffect } from "react";
+import { Suspense, lazy, useEffect } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchMe } from "./features/auth/authSlice";
 
 import Layout from "./components/Layout";
-import Login from "./pages/Login";
-import Onboarding from "./pages/Onboarding";
-import Dashboard from "./pages/Dashboard";
-import Opportunities from "./pages/Opportunities";
-import OpportunityDetail from "./pages/OpportunityDetail";
-import ApplicationTracker from "./pages/ApplicationTracker";
-import Profile from "./pages/Profile";
-import Analytics from "./pages/Analytics";
-import AdminDashboard from "./pages/Admin/AdminDashboard";
-import UploadOpportunity from "./pages/Admin/UploadOpportunity";
+
+// Route-level code splitting: each page (and its heavy deps, e.g. Recharts on
+// Analytics) loads on first visit instead of in the initial bundle.
+const Login = lazy(() => import("./pages/Login"));
+const Onboarding = lazy(() => import("./pages/Onboarding"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const Opportunities = lazy(() => import("./pages/Opportunities"));
+const OpportunityDetail = lazy(() => import("./pages/OpportunityDetail"));
+const ApplicationTracker = lazy(() => import("./pages/ApplicationTracker"));
+const Profile = lazy(() => import("./pages/Profile"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const AdminDashboard = lazy(() => import("./pages/Admin/AdminDashboard"));
+const UploadOpportunity = lazy(() => import("./pages/Admin/UploadOpportunity"));
+
+function PageFallback() {
+  return <div className="p-10 text-center text-sm text-ink-muted">Loading…</div>;
+}
 
 function RequireAuth({ children }) {
   const token = useSelector((s) => s.auth.token);
@@ -43,8 +50,9 @@ export default function App() {
   }, [token, dispatch]);
 
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
+    <Suspense fallback={<PageFallback />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
       <Route
         path="/onboarding"
         element={
@@ -85,7 +93,8 @@ export default function App() {
           }
         />
       </Route>
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </Suspense>
   );
 }

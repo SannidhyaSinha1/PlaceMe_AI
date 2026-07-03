@@ -14,7 +14,6 @@ import io
 import logging
 import os
 import re
-from typing import Optional
 
 from ai_agents import resume_optimizer
 
@@ -25,7 +24,7 @@ _HIGHLIGHT_ALPHA = 0.38
 _MAX_HIGHLIGHTS = 18
 
 
-def read_stored_pdf(url: Optional[str]) -> Optional[bytes]:
+def read_stored_pdf(url: str | None) -> bytes | None:
     """Fetch the original résumé PDF bytes from its stored URL (local or remote)."""
     if not url:
         return None
@@ -58,7 +57,7 @@ def _norm(token: str) -> str:
     return token.strip(" .,():;|/–-").lower()
 
 
-def highlight_pdf(original: bytes, keywords: list[str]) -> Optional[bytes]:
+def highlight_pdf(original: bytes, keywords: list[str]) -> bytes | None:
     """Return the original PDF with `keywords` highlighted in place (layout intact)."""
     import pdfplumber
     from pypdf import PdfReader, PdfWriter
@@ -132,24 +131,29 @@ def _flatten(resume: dict) -> list[str]:
 async def generate_and_store(
     user_id: int,
     opportunity: dict,
-    resume_url: Optional[str],
+    resume_url: str | None,
     resume_parsed: dict,
     required_skills: list[str],
     job_description: str,
 ) -> dict:
     """Highlight the original résumé for this role → upload → return download + tips."""
+    import asyncio
+
     from fastapi_app.services.cloudinary_service import upload_tailored_resume
 
-    analysis = resume_optimizer.analyze_resume(resume_parsed or {}, job_description, required_skills)
+    # LLM analysis, PDF fetch/highlight and the upload are blocking — thread them.
+    analysis = await asyncio.to_thread(
+        resume_optimizer.analyze_resume, resume_parsed or {}, job_description, required_skills
+    )
     highlights = _pick_highlights(analysis["matched_keywords"], required_skills, resume_parsed or {})
 
-    original = read_stored_pdf(resume_url)
+    original = await asyncio.to_thread(read_stored_pdf, resume_url)
     pdf_url = None
     note = ""
     if original:
-        highlighted = highlight_pdf(original, highlights)
+        highlighted = await asyncio.to_thread(highlight_pdf, original, highlights)
         opp_id = opportunity.get("id", 0)
-        pdf_url = upload_tailored_resume(highlighted, user_id, opp_id)
+        pdf_url = await asyncio.to_thread(upload_tailored_resume, highlighted, user_id, opp_id)
         note = (
             f"Your original résumé — layout untouched — with {len(highlights)} role-relevant "
             "keyword(s) highlighted. Add the suggested keywords in your own source to raise the match."

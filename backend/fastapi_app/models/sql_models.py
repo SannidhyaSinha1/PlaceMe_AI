@@ -59,14 +59,16 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     # OAuth tokens are encrypted at rest (Fernet) via the EncryptedStr type.
-    gmail_access_token: Mapped[Optional[str]] = mapped_column(EncryptedStr)
-    gmail_refresh_token: Mapped[Optional[str]] = mapped_column(EncryptedStr)
-    created_at: Mapped[Optional[datetime]] = mapped_column(
+    gmail_access_token: Mapped[str | None] = mapped_column(EncryptedStr)
+    gmail_refresh_token: Mapped[str | None] = mapped_column(EncryptedStr)
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
+    # Loaded explicitly where needed (auth responses) — an implicit selectin
+    # here costs an extra query on every authenticated request.
     profile: Mapped[Optional["StudentProfile"]] = relationship(
-        back_populates="user", uselist=False, lazy="selectin", cascade="all, delete-orphan"
+        back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
     applications: Mapped[list["Application"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
@@ -80,20 +82,20 @@ class StudentProfile(Base):
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), unique=True
     )
-    name: Mapped[Optional[str]] = mapped_column(String(255))
-    college: Mapped[Optional[str]] = mapped_column(String(255))
-    branch: Mapped[Optional[str]] = mapped_column(String(100))
-    current_year: Mapped[Optional[int]] = mapped_column(SmallInteger)
-    cgpa: Mapped[Optional[float]] = mapped_column(Numeric(4, 2))
-    tenth_pct: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
-    twelfth_pct: Mapped[Optional[float]] = mapped_column(Numeric(5, 2))
-    active_backlogs: Mapped[Optional[int]] = mapped_column(SmallInteger, default=0)
-    skills: Mapped[Optional[list]] = mapped_column(JsonCol)
-    resume_url: Mapped[Optional[str]] = mapped_column(Text)
-    resume_parsed: Mapped[Optional[dict]] = mapped_column(JsonCol)
+    name: Mapped[str | None] = mapped_column(String(255))
+    college: Mapped[str | None] = mapped_column(String(255))
+    branch: Mapped[str | None] = mapped_column(String(100))
+    current_year: Mapped[int | None] = mapped_column(SmallInteger)
+    cgpa: Mapped[float | None] = mapped_column(Numeric(4, 2))
+    tenth_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    twelfth_pct: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    active_backlogs: Mapped[int | None] = mapped_column(SmallInteger, default=0)
+    skills: Mapped[list | None] = mapped_column(JsonCol)
+    resume_url: Mapped[str | None] = mapped_column(Text)
+    resume_parsed: Mapped[dict | None] = mapped_column(JsonCol)
     # Raw LaTeX (.tex) source of the résumé — lets the AI edit it in place
     # (bold/add/remove keywords) and return tailored, compilable LaTeX.
-    resume_latex: Mapped[Optional[str]] = mapped_column(Text)
+    resume_latex: Mapped[str | None] = mapped_column(Text)
 
     user: Mapped["User"] = relationship(back_populates="profile")
 
@@ -135,19 +137,19 @@ class Opportunity(Base):
     __tablename__ = "opportunities"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    company_name: Mapped[Optional[str]] = mapped_column(String(255), index=True)
-    role: Mapped[Optional[str]] = mapped_column(String(255))
-    opportunity_type: Mapped[str] = mapped_column(String(50), default="Other")
-    description: Mapped[Optional[str]] = mapped_column(Text)
-    deadline: Mapped[Optional[date]] = mapped_column(Date, index=True)
-    salary_stipend: Mapped[Optional[str]] = mapped_column(String(100))
-    job_location: Mapped[Optional[str]] = mapped_column(String(255))
-    required_skills: Mapped[Optional[list]] = mapped_column(JsonCol)
-    eligibility_criteria: Mapped[Optional[dict]] = mapped_column(JsonCol)
-    source_email_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True)
+    company_name: Mapped[str | None] = mapped_column(String(255), index=True)
+    role: Mapped[str | None] = mapped_column(String(255))
+    opportunity_type: Mapped[str] = mapped_column(String(50), default="Other", index=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    deadline: Mapped[date | None] = mapped_column(Date, index=True)
+    salary_stipend: Mapped[str | None] = mapped_column(String(100))
+    job_location: Mapped[str | None] = mapped_column(String(255))
+    required_skills: Mapped[list | None] = mapped_column(JsonCol)
+    eligibility_criteria: Mapped[dict | None] = mapped_column(JsonCol)
+    source_email_id: Mapped[str | None] = mapped_column(String(255), unique=True)
     source: Mapped[str] = mapped_column(String(20), default="manual")
-    created_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
     )
 
     applications: Mapped[list["Application"]] = relationship(back_populates="opportunity")
@@ -176,22 +178,26 @@ class Application(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     opportunity_id: Mapped[int] = mapped_column(
-        ForeignKey("opportunities.id", ondelete="CASCADE")
+        ForeignKey("opportunities.id", ondelete="CASCADE"), index=True
     )
     status: Mapped[str] = mapped_column(String(50), default="Interested")
-    eligibility_status: Mapped[Optional[str]] = mapped_column(String(30))
-    eligibility_reasons: Mapped[Optional[list]] = mapped_column(JsonCol)
-    eligibility_score: Mapped[Optional[float]] = mapped_column(Float)
-    cover_letter_url: Mapped[Optional[str]] = mapped_column(Text)
-    notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime]] = mapped_column(
+    eligibility_status: Mapped[str | None] = mapped_column(String(30))
+    eligibility_reasons: Mapped[list | None] = mapped_column(JsonCol)
+    eligibility_score: Mapped[float | None] = mapped_column(Float)
+    cover_letter_url: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
+    updated_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    user: Mapped["User"] = relationship(back_populates="applications", lazy="selectin")
+    # No API path reads application.user — don't eager-load it (it cascaded a
+    # users + student_profiles query onto every applications fetch).
+    user: Mapped["User"] = relationship(back_populates="applications")
+    # ApplicationOut serializes the nested opportunity, so keep the batched
+    # selectin (one IN query per result set).
     opportunity: Mapped["Opportunity"] = relationship(
         back_populates="applications", lazy="selectin"
     )
@@ -205,15 +211,15 @@ class Reminder(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     application_id: Mapped[int] = mapped_column(
-        ForeignKey("applications.id", ondelete="CASCADE")
+        ForeignKey("applications.id", ondelete="CASCADE"), index=True
     )
     remind_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     reminder_type: Mapped[str] = mapped_column(String(20))  # 7d / 3d / 1d / 0d
     sent: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    application: Mapped["Application"] = relationship(
-        back_populates="reminders", lazy="selectin"
-    )
+    # The reminder task loads applications explicitly; eager-loading here
+    # chained application → opportunity queries onto every reminder fetch.
+    application: Mapped["Application"] = relationship(back_populates="reminders")
 
 
 class Announcement(Base):
@@ -223,8 +229,8 @@ class Announcement(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     title: Mapped[str] = mapped_column(String(255))
-    body: Mapped[Optional[str]] = mapped_column(Text)
-    created_by: Mapped[Optional[str]] = mapped_column(String(255))
-    created_at: Mapped[Optional[datetime]] = mapped_column(
+    body: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

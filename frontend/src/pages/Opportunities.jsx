@@ -37,9 +37,20 @@ export default function Opportunities() {
   const dispatch = useDispatch();
   const { items, filters, status } = useSelector((s) => s.opportunities);
   const [busyId, setBusyId] = useState(null);
+  const [searchInput, setSearchInput] = useState(filters.search);
+
+  // Debounce typing: only push the search term into filters (and refetch)
+  // after a 300ms pause instead of on every keystroke.
+  useEffect(() => {
+    if (searchInput === filters.search) return;
+    const t = setTimeout(() => dispatch(setFilter({ search: searchInput })), 300);
+    return () => clearTimeout(t);
+  }, [searchInput, filters.search, dispatch]);
 
   useEffect(() => {
-    dispatch(fetchOpportunities());
+    const promise = dispatch(fetchOpportunities());
+    // Abort the in-flight request when filters change again before it lands.
+    return () => promise.abort();
   }, [dispatch, filters]);
 
   const update = (patch) => dispatch(setFilter(patch));
@@ -74,8 +85,8 @@ export default function Opportunities() {
             <input
               className="input pl-9"
               placeholder="Search company or role…"
-              value={filters.search}
-              onChange={(e) => update({ search: e.target.value })}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
           <div className="flex gap-3">

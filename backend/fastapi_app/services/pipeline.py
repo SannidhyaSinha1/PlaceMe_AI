@@ -10,8 +10,7 @@ core that must run for every opportunity.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time, timedelta, timezone
-from typing import Optional
+from datetime import UTC, date, datetime, time, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,7 +53,7 @@ def _criteria_from_extract(data: dict) -> dict:
     }
 
 
-def _parse_deadline(value) -> Optional[date]:
+def _parse_deadline(value) -> date | None:
     if not value:
         return None
     if isinstance(value, date):
@@ -68,7 +67,7 @@ def _parse_deadline(value) -> Optional[date]:
 
 
 async def upsert_opportunity_from_extract(
-    db: AsyncSession, data: dict, source_email_id: Optional[str] = None, source: str = "email"
+    db: AsyncSession, data: dict, source_email_id: str | None = None, source: str = "email"
 ) -> Opportunity:
     """Create/update an Opportunity row from extracted fields (dedup by email id)."""
     opp = None
@@ -96,15 +95,27 @@ async def upsert_opportunity_from_extract(
     return opp
 
 
-def evaluate_for_student(opp: Opportunity, profile: Optional[dict]) -> dict:
+def evaluate_for_student(opp: Opportunity, profile: dict | None) -> dict:
     """Eligibility result for one opportunity + student profile."""
+    return evaluate_batch_for_student([opp], profile)[0]
+
+
+def evaluate_batch_for_student(
+    opps: list[Opportunity], profile: dict | None
+) -> list[dict]:
+    """Eligibility results for many opportunities in one model call."""
     if not profile:
-        return {"status": "Unknown", "reasons": ["Complete your profile to check eligibility"], "score": None}
-    return eligibility_engine.check_eligibility(profile, opp.eligibility_criteria or {})
+        return [
+            {"status": "Unknown", "reasons": ["Complete your profile to check eligibility"], "score": None}
+            for _ in opps
+        ]
+    return eligibility_engine.check_eligibility_batch(
+        profile, [opp.eligibility_criteria or {} for opp in opps]
+    )
 
 
 async def ensure_application(
-    db: AsyncSession, user_id: int, opp: Opportunity, profile: Optional[dict],
+    db: AsyncSession, user_id: int, opp: Opportunity, profile: dict | None,
     status: str = "Interested",
 ) -> Application:
     """Create (or fetch) an application and stamp its eligibility verdict."""
@@ -145,7 +156,7 @@ async def schedule_reminders(db: AsyncSession, app: Application, opp: Opportunit
         remind_day = opp.deadline - timedelta(days=offset)
         if remind_day < today:
             continue
-        remind_at = datetime.combine(remind_day, time(9, 0), tzinfo=timezone.utc)
+        remind_at = datetime.combine(remind_day, time(9, 0), tzinfo=UTC)
         db.add(
             Reminder(
                 application_id=app.id, remind_at=remind_at,

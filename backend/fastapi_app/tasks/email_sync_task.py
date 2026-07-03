@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -63,16 +63,22 @@ async def _sync_user(user_id: int) -> dict:
 
         raw_col = mongo_collection("raw_emails")
         new_opp_ids: list[int] = []
+
+        # One IN query instead of a lookup per email.
+        msg_ids = [m for m in (e.get("gmail_message_id") for e in emails) if m]
+        already_imported = set(
+            (
+                await db.execute(
+                    select(Opportunity.source_email_id).where(
+                        Opportunity.source_email_id.in_(msg_ids)
+                    )
+                )
+            ).scalars()
+        ) if msg_ids else set()
+
         for email in emails:
             msg_id = email.get("gmail_message_id")
-            if not msg_id:
-                continue
-            exists = (
-                await db.execute(
-                    select(Opportunity.id).where(Opportunity.source_email_id == msg_id)
-                )
-            ).scalar_one_or_none()
-            if exists:
+            if not msg_id or msg_id in already_imported:
                 continue
             if raw_col is not None:
                 await _store_raw(raw_col, user_id, email)
@@ -107,7 +113,7 @@ async def _store_raw(col, user_id: int, email: dict):
                     "sender": email.get("sender"),
                     "received_at": email.get("received_at"),
                     "processed": True,
-                    "stored_at": datetime.now(timezone.utc).isoformat(),
+                    "stored_at": datetime.now(UTC).isoformat(),
                 }
             },
             upsert=True,
@@ -125,6 +131,6 @@ async def _purge_old_raw_emails(days: int) -> dict:
     col = mongo_collection("raw_emails")
     if col is None:
         return {"deleted": 0}
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    cutoff = (datetime.now(UTC) - timedelta(days=days)).isoformat()
     res = await col.delete_many({"stored_at": {"$lt": cutoff}})
     return {"deleted": res.deleted_count}

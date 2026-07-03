@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 from datetime import date
-from typing import Optional
 
 from ai_agents import llm_client
 
@@ -103,8 +103,12 @@ async def generate_and_store(
     """Full path: text → PDF → upload → return {text, pdf_url}."""
     from fastapi_app.services.cloudinary_service import upload_cover_letter
 
-    text = generate_cover_letter_text(resume, opportunity, company_summary)
-    pdf_bytes = text_to_pdf_bytes(text)
+    # LLM call, ReportLab rendering and the upload are all blocking — keep
+    # them in worker threads so the event loop stays responsive.
+    text = await asyncio.to_thread(
+        generate_cover_letter_text, resume, opportunity, company_summary
+    )
+    pdf_bytes = await asyncio.to_thread(text_to_pdf_bytes, text)
     opp_id = opportunity.get("id", 0)
-    url = upload_cover_letter(pdf_bytes, user_id, opp_id)
+    url = await asyncio.to_thread(upload_cover_letter, pdf_bytes, user_id, opp_id)
     return {"text": text, "pdf_url": url}

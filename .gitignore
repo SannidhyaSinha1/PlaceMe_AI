@@ -25,6 +25,7 @@ frontend/dist/
 
 # Misc
 .DS_Store
+*.pdf
 
 # Local agent/editor settings
 .claude/settings.local.json

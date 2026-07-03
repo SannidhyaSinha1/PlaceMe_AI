@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -59,7 +61,9 @@ async def charts(
     )
 
     dark = theme.lower() == "dark"
-    return AnalyticsChartsOut(
-        status_pie=chart_generator.status_pie_chart(dash["status_counts"], dark=dark),
-        skill_gap_bar=chart_generator.skill_gap_bar_chart(gap_demand, dark=dark),
+    # Matplotlib rendering is CPU-bound — keep it off the event loop.
+    status_pie, skill_gap_bar = await asyncio.gather(
+        asyncio.to_thread(chart_generator.status_pie_chart, dash["status_counts"], dark=dark),
+        asyncio.to_thread(chart_generator.skill_gap_bar_chart, gap_demand, dark=dark),
     )
+    return AnalyticsChartsOut(status_pie=status_pie, skill_gap_bar=skill_gap_bar)

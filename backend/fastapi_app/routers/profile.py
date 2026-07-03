@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,17 +66,20 @@ async def upload_resume(
 
     from fastapi_app.services.cloudinary_service import (
         delete_local,
+    )
+    from fastapi_app.services.cloudinary_service import (
         upload_resume as store_resume,
     )
     from fastapi_app.services.resume_parser import parse_resume
 
-    parsed = parse_resume(file_bytes)
-    url = store_resume(file_bytes, user.id)
+    # PDF parsing is CPU-bound and the upload is blocking HTTP — off the loop.
+    parsed = await asyncio.to_thread(parse_resume, file_bytes)
+    url = await asyncio.to_thread(store_resume, file_bytes, user.id)
 
     profile = await _get_or_create_profile(db, user.id)
     # Remove the previous locally-stored resume so old files don't linger.
     if profile.resume_url and profile.resume_url != url:
-        delete_local(profile.resume_url)
+        await asyncio.to_thread(delete_local, profile.resume_url)
     profile.resume_url = url
     profile.resume_parsed = parsed
     # Merge newly parsed skills into the profile skill list.

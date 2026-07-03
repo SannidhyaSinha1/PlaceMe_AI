@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -61,7 +60,7 @@ def _resume_text(resume: dict) -> str:
 
 class ResumeAnalysis(BaseModel):
     suggestions: list[str] = Field(default_factory=list)
-    tailored_summary: Optional[str] = None
+    tailored_summary: str | None = None
 
 
 def analyze_resume(resume: dict, job_description: str, required_skills: list[str]) -> dict:
@@ -93,7 +92,7 @@ def analyze_resume(resume: dict, job_description: str, required_skills: list[str
     }
 
 
-def _llm_suggestions(resume, jd, missing, gaps) -> tuple[list[str], Optional[str]]:
+def _llm_suggestions(resume, jd, missing, gaps) -> tuple[list[str], str | None]:
     if not llm_client.llm_available():
         fallback = [
             f"Add the missing keyword '{kw}' if you have relevant experience."

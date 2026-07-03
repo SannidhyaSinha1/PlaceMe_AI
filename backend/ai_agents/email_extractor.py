@@ -11,7 +11,6 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
-from typing import List, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -26,22 +25,22 @@ OPPORTUNITY_TYPE_VALUES = (
 
 
 class OpportunityExtract(BaseModel):
-    company_name: Optional[str] = Field(None, description="Hiring company / organiser")
-    role: Optional[str] = Field(None, description="Job title or role")
+    company_name: str | None = Field(None, description="Hiring company / organiser")
+    role: str | None = Field(None, description="Job title or role")
     opportunity_type: str = Field(
         "Other", description=f"One of: {OPPORTUNITY_TYPE_VALUES}"
     )
-    deadline: Optional[str] = Field(None, description="Application deadline YYYY-MM-DD")
-    salary_stipend: Optional[str] = Field(None, description="Salary or stipend text")
-    job_location: Optional[str] = None
-    required_skills: List[str] = Field(default_factory=list)
-    min_cgpa: Optional[float] = None
-    allowed_branches: Optional[List[str]] = None
-    allowed_years: Optional[List[int]] = None
-    min_tenth: Optional[float] = None
-    min_twelfth: Optional[float] = None
-    no_backlogs_required: Optional[bool] = None
-    summary: Optional[str] = Field(None, description="One-line summary")
+    deadline: str | None = Field(None, description="Application deadline YYYY-MM-DD")
+    salary_stipend: str | None = Field(None, description="Salary or stipend text")
+    job_location: str | None = None
+    required_skills: list[str] = Field(default_factory=list)
+    min_cgpa: float | None = None
+    allowed_branches: list[str] | None = None
+    allowed_years: list[int] | None = None
+    min_tenth: float | None = None
+    min_twelfth: float | None = None
+    no_backlogs_required: bool | None = None
+    summary: str | None = Field(None, description="One-line summary")
 
     @field_validator("required_skills", mode="before")
     @classmethod
@@ -90,9 +89,13 @@ def extract_from_email(
     """
     if llm_client.llm_available():
         try:
+            # Collapse whitespace runs (HTML-derived emails are full of them)
+            # before truncating — same content, meaningfully fewer tokens.
+            compact = re.sub(r"[ \t]+", " ", body or "")
+            compact = re.sub(r"\n{3,}", "\n\n", compact)
             payload = {
                 "subject": subject or "",
-                "body": (body or "")[:8000],
+                "body": compact[:8000],
                 "_build": _build_chain,
             }
             return llm_client.invoke_with_fallback(None, payload)
@@ -157,7 +160,7 @@ def _strip_signature_and_quotes(body: str) -> str:
     return body[: m.start()] if m else body
 
 
-def _company_from_subject(subject: str) -> Optional[str]:
+def _company_from_subject(subject: str) -> str | None:
     """Leading capitalised proper-noun run of the subject, minus Re:/Fwd: and junk."""
     s = re.sub(r"(?i)^\s*(?:re|fwd|fw)\s*:\s*", "", subject or "").strip()
     picked: list[str] = []
@@ -169,7 +172,7 @@ def _company_from_subject(subject: str) -> Optional[str]:
     return " ".join(picked[:4]) or None
 
 
-def _extract_company(subject: str, text: str) -> Optional[str]:
+def _extract_company(subject: str, text: str) -> str | None:
     """Company from a '<lead-in> <Proper Noun>' phrase, else the subject's name run.
 
     'by'/'from' are deliberately omitted as lead-ins — they matched signature
@@ -239,7 +242,7 @@ def _heuristic_extract(subject: str, body: str) -> OpportunityExtract:
     )
 
 
-def _find_date(text: str) -> Optional[str]:
+def _find_date(text: str) -> str | None:
     for pattern, fmt in _DATE_PATTERNS:
         m = re.search(pattern, text)
         if not m:
@@ -252,7 +255,7 @@ def _find_date(text: str) -> Optional[str]:
     return None
 
 
-def _find_float(text: str, patterns: list[str]) -> Optional[float]:
+def _find_float(text: str, patterns: list[str]) -> float | None:
     for p in patterns:
         m = re.search(p, text)
         if m:

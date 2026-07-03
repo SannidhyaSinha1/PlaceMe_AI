@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import os
 import secrets
-from typing import Optional
 
 from fastapi_app.core.cloudinary_client import init_cloudinary
 from fastapi_app.core.config import get_settings
@@ -33,7 +32,7 @@ def _local_save(file_bytes: bytes, folder: str, filename: str) -> str:
     return f"/files/{folder}/{filename}"
 
 
-def delete_local(url: Optional[str]) -> None:
+def delete_local(url: str | None) -> None:
     """Best-effort removal of a previously stored ``/files/...`` asset.
 
     Confined to ``uploads_dir`` to defend against path traversal; remote

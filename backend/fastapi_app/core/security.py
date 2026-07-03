@@ -1,6 +1,6 @@
 """JWT auth for students: python-jose tokens + passlib(bcrypt) password hashing."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
@@ -37,7 +37,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 def create_access_token(subject: int | str, expires_minutes: int | None = None, **extra) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(
+    expire = datetime.now(UTC) + timedelta(
         minutes=expires_minutes or settings.access_token_expire_minutes
     )
     payload = {"sub": str(subject), "exp": expire, **extra}
@@ -48,7 +48,7 @@ def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
     except JWTError:
-        raise _credentials_error
+        raise _credentials_error from None
 
 
 async def get_current_user(
@@ -58,7 +58,7 @@ async def get_current_user(
     try:
         user_id = int(payload.get("sub", ""))
     except (TypeError, ValueError):
-        raise _credentials_error
+        raise _credentials_error from None
     user = await db.get(User, user_id)
     if user is None:
         raise _credentials_error
