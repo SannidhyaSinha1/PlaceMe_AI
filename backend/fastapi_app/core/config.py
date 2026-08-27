@@ -1,8 +1,8 @@
 """Application settings.
 
 Every external service is optional: with no env vars at all the API boots on
-a local SQLite file and AI/Gmail/storage features degrade gracefully with
-clear error messages, instead of crashing. Set the corresponding keys (see
+a local SQLite file, and Gmail/LLM features degrade gracefully with clear
+error messages instead of crashing. Set the corresponding keys (see
 .env.example) to switch each feature on.
 """
 
@@ -42,39 +42,22 @@ class Settings(BaseSettings):
     # Falls back to secret_key when unset; set a dedicated value in production.
     token_encryption_key: str = ""
 
-    # Per-IP rate limiting on auth/AI/sync endpoints (in-memory, no Redis).
+    # Per-IP rate limiting on auth/sync endpoints (in-memory, no Redis).
     rate_limit_enabled: bool = True
 
-    # Emails that receive admin rights on registration (comma separated)
-    admin_emails: str = ""
-
-    # Databases
+    # Database — Supabase/Postgres URL, else a local SQLite file.
     supabase_db_url: str = ""
-    mongo_uri: str = ""
-    upstash_redis_url: str = "redis://localhost:6379/0"
 
     # Google OAuth (Gmail inbox sync)
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/gmail/callback"
 
-    # LLMs
+    # LLMs used to extract company details out of an email
     groq_api_key: str = ""
     gemini_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
-    gemini_model: str = "gemini-2.0-flash"
-
-    # Web search
-    tavily_api_key: str = ""
-
-    # File storage
-    cloudinary_cloud_name: str = ""
-    cloudinary_api_key: str = ""
-    cloudinary_api_secret: str = ""
-
-    # SMTP reminders
-    gmail_address: str = ""
-    gmail_app_password: str = ""
+    gemini_model: str = "gemini-3.6-flash"
 
     # Restrict Gmail sync to emails from this sender only
     placement_email_sender: str = "helpdesk.cdc@vit.ac.in"
@@ -84,9 +67,6 @@ class Settings(BaseSettings):
 
     frontend_origin: str = "http://localhost:3000"
 
-    faiss_index_dir: str = str(REPO_ROOT / "faiss_indexes")
-    uploads_dir: str = str(REPO_ROOT / "uploads")
-
     @property
     def is_production(self) -> bool:
         return self.environment.strip().lower() in ("production", "prod")
@@ -94,10 +74,6 @@ class Settings(BaseSettings):
     @property
     def using_default_secret(self) -> bool:
         return self.secret_key == "dev-only-secret-change-me"
-
-    @property
-    def admin_email_list(self) -> list[str]:
-        return [e.strip().lower() for e in self.admin_emails.split(",") if e.strip()]
 
     @property
     def sqlalchemy_url(self) -> str:
@@ -116,20 +92,8 @@ class Settings(BaseSettings):
         return bool(self.groq_api_key or self.gemini_api_key)
 
     @property
-    def smtp_configured(self) -> bool:
-        return bool(self.gmail_address and self.gmail_app_password)
-
-    @property
     def gmail_oauth_configured(self) -> bool:
         return bool(self.google_client_id and self.google_client_secret)
-
-    @property
-    def cloudinary_configured(self) -> bool:
-        return bool(
-            self.cloudinary_cloud_name
-            and self.cloudinary_api_key
-            and self.cloudinary_api_secret
-        )
 
 
 @lru_cache

@@ -1,4 +1,4 @@
-"""Gmail sync: imports new emails once, skips already-imported on re-sync."""
+"""Gmail sync: parses new emails once, skips already-imported on re-sync."""
 
 import pytest
 from sqlalchemy import select, update
@@ -54,6 +54,11 @@ async def test_sync_imports_then_skips(client, gmail_student):
         ).scalars().all()
         assert len(rows) == 2
         original_names = {o.source_email_id: o.company_name for o in rows}
+        by_id = {o.source_email_id: o for o in rows}
+        # Company details really came out of the email body.
+        assert by_id["msg-001"].opportunity_type == "Internship"
+        assert "python" in (by_id["msg-001"].required_skills or [])
+        assert by_id["msg-002"].deadline.isoformat() == "2026-09-01"
 
     # Re-sync: same emails come back — all must be skipped, data untouched.
     r = await client.post("/gmail/sync", headers=gmail_student["headers"])

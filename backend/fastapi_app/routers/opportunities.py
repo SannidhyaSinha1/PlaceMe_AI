@@ -1,4 +1,4 @@
-"""Opportunity listing with filters/sort + per-student eligibility enrichment."""
+"""Read-only listing of the company details parsed out of placement emails."""
 
 from __future__ import annotations
 
@@ -10,55 +10,36 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi_app.core.database import get_db
-from fastapi_app.core.security import get_current_admin, get_current_user
-from fastapi_app.models.schemas import (
-    EligibilityOut,
-    OpportunityIn,
-    OpportunityOut,
-)
-from fastapi_app.models.sql_models import Application, Opportunity, StudentProfile, User
-from fastapi_app.services import gmail_service, pipeline
+from fastapi_app.core.security import get_current_user
+from fastapi_app.models.schemas import EmailOut, OpportunityOut
+from fastapi_app.models.sql_models import Opportunity, User
+from fastapi_app.services import gmail_service
 
 router = APIRouter(prefix="/opportunities", tags=["opportunities"])
 
 _SORTS = {
-    "deadline": Opportunity.deadline.asc(),
-    "salary": Opportunity.salary_stipend.desc(),
-    "company": Opportunity.company_name.asc(),
     "newest": Opportunity.created_at.desc(),
+    "deadline": Opportunity.deadline.asc(),
+    "company": Opportunity.company_name.asc(),
 }
 
 
-async def _profile_dict(db: AsyncSession, user_id: int) -> dict | None:
-    profile = (
-        await db.execute(select(StudentProfile).where(StudentProfile.user_id == user_id))
-    ).scalar_one_or_none()
-    return profile.as_dict() if profile else None
-
-
-def _serialize(opp: Opportunity, verdict: dict, app) -> OpportunityOut:
-    """`app` is anything with .id/.status (Application or a column-only Row)."""
+def _serialize(opp: Opportunity) -> OpportunityOut:
     out = OpportunityOut.model_validate(opp)
-    out.eligibility = EligibilityOut(**verdict)
     if opp.source_email_id:
         out.email_link = gmail_service.message_web_link(opp.source_email_id)
-    if app:
-        out.application_id = app.id
-        out.application_status = app.status
     return out
 
 
 @router.get("", response_model=list[OpportunityOut])
 async def list_opportunities(
     type: str | None = Query(None, max_length=50, description="Filter by opportunity_type"),
-    eligible_only: bool = False,
-    applied: bool | None = None,
     upcoming: bool = Query(False, description="Deadline within 14 days"),
     search: str | None = Query(None, max_length=200),
     sort: str = Query("newest", enum=list(_SORTS.keys())),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-    user: User = Depends(get_current_user),
+    _: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(Opportunity)
@@ -78,59 +59,24 @@ async def list_opportunities(
     stmt = stmt.order_by(_SORTS[sort]).limit(limit).offset(offset)
 
     opps = (await db.execute(stmt)).scalars().all()
-
-    # Pull this user's applications once for enrichment. Column-only select:
-    # loading Application entities would eager-load each one's opportunity too.
-    apps = {
-        row.opportunity_id: row
-        for row in (
-            await db.execute(
-                select(Application.opportunity_id, Application.id, Application.status)
-                .where(Application.user_id == user.id)
-            )
-        ).all()
-    }
-    profile = await _profile_dict(db, user.id)
-
-    verdicts = pipeline.evaluate_batch_for_student(opps, profile)
-
-    results: list[OpportunityOut] = []
-    for opp, verdict in zip(opps, verdicts, strict=True):
-        app = apps.get(opp.id)
-        if eligible_only and verdict.get("status") not in ("Eligible", "Potentially Eligible"):
-            continue
-        if applied is True and app is None:
-            continue
-        if applied is False and app is not None:
-            continue
-        results.append(_serialize(opp, verdict, app))
-    return results
+    return [_serialize(o) for o in opps]
 
 
 @router.get("/{opp_id}", response_model=OpportunityOut)
 async def get_opportunity(
-    opp_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    opp_id: int, _: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     opp = await db.get(Opportunity, opp_id)
     if opp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Opportunity not found")
-    profile = await _profile_dict(db, user.id)
-    verdict = pipeline.evaluate_for_student(opp, profile)
-    app = (
-        await db.execute(
-            select(Application.opportunity_id, Application.id, Application.status).where(
-                Application.user_id == user.id, Application.opportunity_id == opp.id
-            )
-        )
-    ).one_or_none()
-    return _serialize(opp, verdict, app)
+    return _serialize(opp)
 
 
-@router.get("/{opp_id}/email")
+@router.get("/{opp_id}/email", response_model=EmailOut)
 async def get_opportunity_email(
     opp_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    """Fetch the original Gmail email for this opportunity."""
+    """Fetch the original Gmail email this opportunity was parsed from."""
     opp = await db.get(Opportunity, opp_id)
     if opp is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Opportunity not found")
@@ -145,20 +91,6 @@ async def get_opportunity_email(
             user.gmail_refresh_token,
             opp.source_email_id,
         )
-    except Exception as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Gmail fetch failed: {exc}") from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Gmail fetch failed") from exc
     return email
-
-
-@router.post("", response_model=OpportunityOut, status_code=status.HTTP_201_CREATED)
-async def create_opportunity(
-    payload: OpportunityIn,
-    _: User = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Manual creation (admin) — bypasses the Gmail pipeline."""
-    opp = Opportunity(**payload.model_dump(), source="manual")
-    db.add(opp)
-    await db.commit()
-    await db.refresh(opp)
-    return _serialize(opp, {"status": "Unknown", "reasons": [], "score": None}, None)

@@ -1,12 +1,8 @@
-"""Data layer: Supabase PostgreSQL (SQLAlchemy async) + MongoDB Atlas (motor).
+"""Data layer: Supabase PostgreSQL via SQLAlchemy async.
 
-Postgres holds the relational core (users, profiles, opportunities,
-applications, reminders, announcements). Mongo holds bulky documents — raw
-emails, AI content, company research reports — to keep the free 500 MB
-Postgres tier lean.
-
-With SUPABASE_DB_URL unset the app uses a local SQLite file; with MONGO_URI
-unset every Mongo-backed feature simply no-ops (callers get None collections).
+Holds the two tables this app needs — users (with their encrypted Gmail
+tokens) and opportunities (the company details parsed out of each email).
+With SUPABASE_DB_URL unset the app uses a local SQLite file.
 """
 
 import asyncio
@@ -86,25 +82,3 @@ async def init_models() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-
-
-# ── MongoDB Atlas (motor — async, per implementation rule #1) ─────────────
-_mongo_client = None
-
-
-def mongo_db():
-    """The motor database, or None when MONGO_URI is not configured."""
-    global _mongo_client
-    if not settings.mongo_uri:
-        return None
-    if _mongo_client is None:
-        from motor.motor_asyncio import AsyncIOMotorClient
-
-        _mongo_client = AsyncIOMotorClient(settings.mongo_uri)
-    return _mongo_client["placementor"]
-
-
-def mongo_collection(name: str):
-    """A motor collection (raw_emails / company_reports / ai_content), or None."""
-    db = mongo_db()
-    return db[name] if db is not None else None

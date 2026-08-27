@@ -1,43 +1,105 @@
 import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { Search, SlidersHorizontal, SearchX } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
+import { Search, SearchX, RefreshCw, ExternalLink, Inbox, CheckCircle2 } from "lucide-react";
 import { fetchOpportunities, setFilter } from "../features/opportunities/opportunitiesSlice";
-import { markInterested } from "../features/applications/applicationsSlice";
+import { fetchMe } from "../features/auth/authSlice";
+import { authApi, gmailApi } from "../services/api";
 import OpportunityCard from "../components/OpportunityCard";
 
 const TYPES = ["Internship", "Full-Time Placement", "Hackathon", "Competition", "Workshop", "Scholarship"];
 const SORTS = [
   ["newest", "Newest"],
   ["deadline", "Deadline"],
-  ["salary", "Salary"],
   ["company", "Company"],
 ];
-const TOGGLES = [
-  ["eligibleOnly", "Eligible only"],
-  ["upcoming", "Upcoming"],
-  ["applied", "Applied"],
-];
 
-function Toggle({ active, label, onClick }) {
+/** Connect the mailbox, then pull new placement emails out of it. */
+function InboxBar({ connected, onSynced }) {
+  const [msg, setMsg] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const connect = async () => {
+    setMsg(null);
+    try {
+      const { data } = await authApi.gmailConnect();
+      window.location.href = data.auth_url;
+    } catch (e) {
+      setMsg({ tone: "error", text: e.response?.data?.detail || "Gmail OAuth is not configured on the server" });
+    }
+  };
+
+  const sync = async () => {
+    setBusy(true);
+    setMsg({ tone: "info", text: "Reading your inbox…" });
+    try {
+      const { data } = await gmailApi.sync();
+      setMsg({
+        tone: "ok",
+        text: `Read ${data.fetched} email${data.fetched === 1 ? "" : "s"} · ${data.new_opportunities} new compan${data.new_opportunities === 1 ? "y" : "ies"}`,
+      });
+      onSynced();
+    } catch (e) {
+      setMsg({ tone: "error", text: e.response?.data?.detail || "Sync failed" });
+    }
+    setBusy(false);
+  };
+
+  const toneCls = {
+    ok: "text-green-600 dark:text-green-400",
+    error: "text-red-600 dark:text-red-400",
+    info: "text-ink-muted",
+  };
+
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? "border-brand-200 bg-brand-50 text-brand-700"
-          : "border-line bg-surface text-ink-muted hover:bg-muted"
-      }`}
-    >
-      {label}
-    </button>
+    <div className="card flex flex-wrap items-center justify-between gap-3 p-4">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted">
+          <Inbox className="h-[18px] w-[18px] text-ink-soft" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-ink">
+            {connected ? "Gmail connected" : "Connect your Gmail"}
+          </p>
+          <p className="truncate text-xs text-ink-muted">
+            {msg ? (
+              <span className={toneCls[msg.tone]}>{msg.text}</span>
+            ) : connected ? (
+              "Sync to parse new placement emails into company listings."
+            ) : (
+              "Read-only access, used only to find placement emails."
+            )}
+          </p>
+        </div>
+      </div>
+      {connected ? (
+        <button className="btn-secondary" onClick={sync} disabled={busy}>
+          <RefreshCw className={`h-4 w-4 ${busy ? "animate-spin" : ""}`} />
+          {busy ? "Syncing…" : "Sync inbox"}
+        </button>
+      ) : (
+        <button className="btn-primary" onClick={connect}>
+          <ExternalLink className="h-4 w-4" /> Connect Gmail
+        </button>
+      )}
+    </div>
   );
 }
 
 export default function Opportunities() {
   const dispatch = useDispatch();
   const { items, filters, status } = useSelector((s) => s.opportunities);
-  const [busyId, setBusyId] = useState(null);
+  const user = useSelector((s) => s.auth.user);
   const [searchInput, setSearchInput] = useState(filters.search);
+  const [params, setParams] = useSearchParams();
+  const justConnected = params.get("gmail") === "connected";
+
+  // Clear the OAuth callback marker once it has been shown.
+  useEffect(() => {
+    if (!justConnected) return;
+    const t = setTimeout(() => setParams({}, { replace: true }), 6000);
+    return () => clearTimeout(t);
+  }, [justConnected, setParams]);
 
   // Debounce typing: only push the search term into filters (and refetch)
   // after a 300ms pause instead of on every keystroke.
@@ -55,28 +117,30 @@ export default function Opportunities() {
 
   const update = (patch) => dispatch(setFilter(patch));
 
-  const onInterested = async (id) => {
-    setBusyId(id);
-    await dispatch(markInterested(id));
-    await dispatch(fetchOpportunities());
-    setBusyId(null);
+  const onSynced = () => {
+    dispatch(fetchOpportunities());
+    dispatch(fetchMe());
   };
-
-  const toggleVal = (key) => (key === "applied" ? filters.applied === true : filters[key]);
-  const onToggle = (key) =>
-    update(key === "applied" ? { applied: filters.applied === true ? null : true } : { [key]: !filters[key] });
 
   return (
     <div className="animate-fade-up space-y-5">
       <div className="flex items-end justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-ink">Opportunities</h1>
-          <p className="mt-0.5 text-sm text-ink-muted">Internships, placements, hackathons & more.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-ink">Companies</h1>
+          <p className="mt-0.5 text-sm text-ink-muted">Parsed from your placement emails.</p>
         </div>
         <span className="tnum rounded-full bg-muted px-3 py-1 text-xs font-semibold text-ink-soft">
-          {items.length} results
+          {items.length} listed
         </span>
       </div>
+
+      {justConnected && (
+        <p className="flex items-center gap-2 rounded-lg bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
+          <CheckCircle2 className="h-4 w-4" /> Gmail connected — hit “Sync inbox” to pull your emails in.
+        </p>
+      )}
+
+      <InboxBar connected={!!user?.gmail_connected} onSynced={onSynced} />
 
       <div className="card p-4">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
@@ -97,13 +161,17 @@ export default function Opportunities() {
             <select className="input lg:w-[160px]" value={filters.sort} onChange={(e) => update({ sort: e.target.value })}>
               {SORTS.map(([v, l]) => <option key={v} value={v}>Sort: {l}</option>)}
             </select>
+            <button
+              onClick={() => update({ upcoming: !filters.upcoming })}
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                filters.upcoming
+                  ? "border-brand-200 bg-brand-50 text-brand-700"
+                  : "border-line bg-surface text-ink-muted hover:bg-muted"
+              }`}
+            >
+              Closing soon
+            </button>
           </div>
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3">
-          <SlidersHorizontal className="h-3.5 w-3.5 text-ink-muted" />
-          {TOGGLES.map(([key, label]) => (
-            <Toggle key={key} label={label} active={toggleVal(key)} onClick={() => onToggle(key)} />
-          ))}
         </div>
       </div>
 
@@ -128,16 +196,18 @@ export default function Opportunities() {
           <span className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
             <SearchX className="h-6 w-6 text-ink-muted" />
           </span>
-          <p className="font-semibold text-ink">No opportunities found</p>
+          <p className="font-semibold text-ink">Nothing here yet</p>
           <p className="max-w-xs text-sm text-ink-muted">
-            Try clearing a filter, or sync your inbox to pull in new postings.
+            {user?.gmail_connected
+              ? "Sync your inbox to parse placement emails, or clear a filter."
+              : "Connect your Gmail above to get started."}
           </p>
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {items.map((opp, i) => (
             <div key={opp.id} className="animate-fade-up" style={{ animationDelay: `${Math.min(i, 8) * 40}ms` }}>
-              <OpportunityCard opp={opp} onInterested={onInterested} busy={busyId === opp.id} />
+              <OpportunityCard opp={opp} />
             </div>
           ))}
         </div>

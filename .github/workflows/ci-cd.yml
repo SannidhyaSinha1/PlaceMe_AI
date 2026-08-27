@@ -15,14 +15,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install core deps
+      - name: Install deps
         working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r fastapi_app/requirements-core.txt -r requirements-dev.txt
+          pip install -r fastapi_app/requirements.txt -r requirements-dev.txt
       - name: Lint (ruff)
         working-directory: backend
-        run: ruff check fastapi_app ai_agents analytics ml_models tests
+        run: ruff check fastapi_app ai_agents tests
       - name: Import app & smoke-test routes
         working-directory: backend
         run: |
@@ -30,21 +30,6 @@ jobs:
       - name: Run test suite
         working-directory: backend
         run: pytest tests -q
-
-  django:
-    name: Admin portal check (Django)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install & check
-        working-directory: backend/admin_portal
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          python manage.py check
 
   frontend:
     name: Frontend build (Vite)
@@ -64,18 +49,17 @@ jobs:
           npm test
           npm run build
 
-  # ── Deploy on push to main (uses Render deploy hooks + Vercel token) ────
+  # ── Deploy on push to main (uses Render deploy hook + Vercel token) ────
   deploy:
     name: Deploy
-    needs: [backend, django, frontend]
+    needs: [backend, frontend]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Trigger Render deploys
+      - name: Trigger Render deploy
         run: |
           [ -n "${{ secrets.RENDER_FASTAPI_DEPLOY_HOOK }}" ] && curl -fsS "${{ secrets.RENDER_FASTAPI_DEPLOY_HOOK }}" || echo "no fastapi hook set"
-          [ -n "${{ secrets.RENDER_ADMIN_DEPLOY_HOOK }}" ] && curl -fsS "${{ secrets.RENDER_ADMIN_DEPLOY_HOOK }}" || echo "no admin hook set"
       - name: Deploy frontend to Vercel
         if: ${{ secrets.VERCEL_TOKEN != '' }}
         run: |

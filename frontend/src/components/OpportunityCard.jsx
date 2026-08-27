@@ -1,6 +1,5 @@
 import { Link } from "react-router-dom";
-import { MapPin, Wallet, Mail, Plus, Check, ArrowUpRight } from "lucide-react";
-import EligibilityBadge from "./EligibilityBadge";
+import { MapPin, Wallet, Mail, ArrowUpRight } from "lucide-react";
 import DeadlineCountdown from "./DeadlineCountdown";
 
 const TYPE_COLORS = {
@@ -22,7 +21,7 @@ function initials(name) {
     .toUpperCase();
 }
 
-export default function OpportunityCard({ opp, onInterested, busy }) {
+export default function OpportunityCard({ opp }) {
   const typeCls = TYPE_COLORS[opp.opportunity_type] || TYPE_COLORS.Other;
 
   return (
@@ -57,17 +56,6 @@ export default function OpportunityCard({ opp, onInterested, busy }) {
           </span>
         )}
         <DeadlineCountdown deadline={opp.deadline} />
-        {opp.email_link && (
-          <a
-            href={opp.email_link}
-            target="_blank"
-            rel="noopener noreferrer"
-            title="Open the original email in Gmail"
-            className="inline-flex items-center gap-1 font-medium text-brand-600 hover:text-brand-700"
-          >
-            <Mail className="h-3.5 w-3.5" /> Email
-          </a>
-        )}
       </div>
 
       {opp.required_skills?.length > 0 && (
@@ -82,25 +70,22 @@ export default function OpportunityCard({ opp, onInterested, busy }) {
       )}
 
       <div className="mt-auto flex items-center justify-between gap-2 border-t border-line pt-3.5">
-        <EligibilityBadge eligibility={opp.eligibility} />
-        {opp.application_status ? (
-          <span className="inline-flex items-center gap-1 text-xs font-semibold text-green-600">
-            <Check className="h-3.5 w-3.5" /> {opp.application_status}
-          </span>
-        ) : (
-          <button
-            className="btn-secondary px-3 py-1.5 text-xs"
-            disabled={busy}
-            onClick={() => onInterested(opp.id)}
+        <Link
+          to={`/opportunities/${opp.id}`}
+          className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:text-brand-700"
+        >
+          Details <ArrowUpRight className="h-3.5 w-3.5" />
+        </Link>
+        {opp.email_link && (
+          <a
+            href={opp.email_link}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Open the original email in Gmail"
+            className="inline-flex items-center gap-1 text-xs font-medium text-ink-muted hover:text-ink"
           >
-            {busy ? (
-              "Adding…"
-            ) : (
-              <>
-                <Plus className="h-3.5 w-3.5" /> I'm Interested
-              </>
-            )}
-          </button>
+            <Mail className="h-3.5 w-3.5" /> Email
+          </a>
         )}
       </div>
     </div>

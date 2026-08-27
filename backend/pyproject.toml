@@ -27,4 +27,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["fastapi_app", "ai_agents", "analytics", "ml_models"]
+known-first-party = ["fastapi_app", "ai_agents"]

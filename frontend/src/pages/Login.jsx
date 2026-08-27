@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { Navigate } from "react-router-dom";
-import { Mail, Lock, Eye, EyeOff, Sparkles, Target, FileCheck2, ArrowRight } from "lucide-react";
+import { Mail, Lock, Eye, EyeOff, Sparkles, Inbox, Building2, ArrowRight } from "lucide-react";
 import { login, register } from "../features/auth/authSlice";
 import ThemeToggle from "../components/ThemeToggle";
 
 const HIGHLIGHTS = [
-  [Target, "Auto-tracked opportunities", "Internships & placements pulled straight from your inbox."],
-  [FileCheck2, "Instant eligibility checks", "Know if you qualify before you spend time applying."],
-  [Sparkles, "AI resumes & cover letters", "Tailored to every role in one click."],
+  [Inbox, "Connect your inbox", "Read-only access to the placement mail you already receive."],
+  [Sparkles, "Parsed automatically", "Every email turned into structured company details."],
+  [Building2, "Company info at a glance", "Role, stipend, location, skills and deadline in one list."],
 ];
 
 export default function Login() {
@@ -51,11 +51,11 @@ export default function Login() {
 
         <div className="relative max-w-md">
           <h2 className="text-3xl font-bold leading-tight text-white">
-            Your placement season,<br />on autopilot.
+            Placement mail,<br />read for you.
           </h2>
           <p className="mt-3 text-sm leading-relaxed text-brand-100">
-            One workspace for every opportunity, deadline, and application —
-            powered by AI that actually understands your profile.
+            Sync your inbox once and every placement email becomes a clean
+            company listing — no more scrolling through threads.
           </p>
           <div className="mt-9 space-y-5">
             {HIGHLIGHTS.map(([Icon, title, desc]) => (
@@ -97,7 +97,7 @@ export default function Login() {
           <p className="mt-1 text-sm text-ink-muted">
             {mode === "login"
               ? "Sign in to pick up where you left off."
-              : "Start tracking opportunities in minutes."}
+              : "Connect your inbox and see who is hiring."}
           </p>
 
           <div className="mt-6 flex rounded-xl bg-muted p-1 text-sm font-semibold">

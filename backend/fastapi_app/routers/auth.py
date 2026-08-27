@@ -1,4 +1,8 @@
-"""Auth + Gmail OAuth routes."""
+"""Auth + Gmail OAuth routes.
+
+The account exists for one reason: to hold this person's Gmail tokens so the
+sync knows which mailbox to read.
+"""
 
 from __future__ import annotations
 
@@ -21,28 +25,20 @@ from fastapi_app.core.security import (
     verify_password,
 )
 from fastapi_app.models.schemas import LoginIn, RegisterIn, TokenOut, UserOut
-from fastapi_app.models.sql_models import StudentProfile, User
+from fastapi_app.models.sql_models import User
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _user_out(user: User, profile: StudentProfile | None) -> UserOut:
+def _user_out(user: User) -> UserOut:
     return UserOut(
         id=user.id,
         email=user.email,
-        is_admin=user.is_admin,
         gmail_connected=bool(user.gmail_refresh_token),
-        profile_complete=bool(profile and profile.profile_complete),
         created_at=user.created_at,
     )
-
-
-async def _load_profile(db: AsyncSession, user_id: int) -> StudentProfile | None:
-    return (
-        await db.execute(select(StudentProfile).where(StudentProfile.user_id == user_id))
-    ).scalar_one_or_none()
 
 
 @router.post(
@@ -60,19 +56,11 @@ async def register(payload: RegisterIn, db: AsyncSession = Depends(get_db)):
 
     # bcrypt is ~100ms of CPU — keep it off the event loop.
     password_hash = await asyncio.to_thread(hash_password, payload.password)
-    user = User(
-        email=payload.email.lower(),
-        password_hash=password_hash,
-        is_admin=payload.email.lower() in settings.admin_email_list,
-    )
+    user = User(email=payload.email.lower(), password_hash=password_hash)
     db.add(user)
-    await db.flush()
-    profile = StudentProfile(user_id=user.id)
-    db.add(profile)
     await db.commit()
     await db.refresh(user)
-    token = create_access_token(user.id, is_admin=user.is_admin)
-    return TokenOut(access_token=token, user=_user_out(user, profile))
+    return TokenOut(access_token=create_access_token(user.id), user=_user_out(user))
 
 
 @router.post(
@@ -88,13 +76,12 @@ async def login(payload: LoginIn, db: AsyncSession = Depends(get_db)):
         verify_password, payload.password, user.password_hash
     ):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
-    token = create_access_token(user.id, is_admin=user.is_admin)
-    return TokenOut(access_token=token, user=_user_out(user, await _load_profile(db, user.id)))
+    return TokenOut(access_token=create_access_token(user.id), user=_user_out(user))
 
 
 @router.get("/me", response_model=UserOut)
-async def me(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    return _user_out(user, await _load_profile(db, user.id))
+async def me(user: User = Depends(get_current_user)):
+    return _user_out(user)
 
 
 # ── Gmail OAuth ────────────────────────────────────────────────────────────
@@ -135,4 +122,4 @@ async def gmail_callback(
     if tokens.get("refresh_token"):
         user.gmail_refresh_token = tokens["refresh_token"]
     await db.commit()
-    return RedirectResponse(f"{settings.frontend_origin}/profile?gmail=connected")
+    return RedirectResponse(f"{settings.frontend_origin}/?gmail=connected")

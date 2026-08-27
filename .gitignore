@@ -13,11 +13,6 @@ venv/
 # Local artifacts
 *.db
 *.sqlite3
-faiss_indexes/
-uploads/
-backend/ml_models/eligibility_xgb.json
-celerybeat-schedule*
-# synthetic_dataset.csv IS committed as deterministic seed data
 
 # Node
 node_modules/

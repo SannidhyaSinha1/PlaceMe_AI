@@ -1,36 +1,42 @@
-"""Opportunities list: filters, search, sort, eligibility enrichment, caps."""
+"""Opportunities listing: filters, search, sort, query caps."""
 
 import pytest
+from sqlalchemy import delete
+
+from fastapi_app.core.database import SessionLocal
+from fastapi_app.models.sql_models import Opportunity
 
 
 @pytest.fixture
-async def seeded(client, admin):
-    """Three opportunities with distinct types/criteria."""
+async def seeded():
+    """Three parsed opportunities with distinct types."""
     specs = [
         {"company_name": "Alpha Analytics", "role": "Data Intern",
-         "opportunity_type": "Internship",
-         "eligibility_criteria": {"min_cgpa": 7.0, "required_skills": ["python"]}},
+         "opportunity_type": "Internship", "required_skills": ["python"]},
         {"company_name": "Beta Bank", "role": "Quant",
-         "opportunity_type": "Full-Time Placement",
-         "eligibility_criteria": {"min_cgpa": 9.9}},
+         "opportunity_type": "Full-Time Placement", "required_skills": []},
         {"company_name": "Gamma Games", "role": "Hack Night",
-         "opportunity_type": "Hackathon", "eligibility_criteria": {}},
+         "opportunity_type": "Hackathon", "required_skills": []},
     ]
-    ids = []
-    for s in specs:
-        r = await client.post("/opportunities", json=s, headers=admin["headers"])
-        assert r.status_code == 201, r.text
-        ids.append(r.json()["id"])
-    return ids
+    async with SessionLocal() as session:
+        rows = [Opportunity(source_email_id=f"seed-{i}", **s) for i, s in enumerate(specs)]
+        session.add_all(rows)
+        await session.commit()
+        ids = [r.id for r in rows]
+    yield ids
+    async with SessionLocal() as session:
+        await session.execute(delete(Opportunity).where(Opportunity.id.in_(ids)))
+        await session.commit()
 
 
-async def test_list_enriches_eligibility(client, student, seeded):
+async def test_list_returns_parsed_details(client, student, seeded):
     r = await client.get("/opportunities?limit=200", headers=student["headers"])
     assert r.status_code == 200
     by_company = {o["company_name"]: o for o in r.json()}
-    # 8.5 CGPA student: eligible for Alpha, hard-blocked by Beta's 9.9 bar.
-    assert by_company["Alpha Analytics"]["eligibility"]["status"] == "Eligible"
-    assert by_company["Beta Bank"]["eligibility"]["status"] == "Not Eligible"
+    assert by_company["Alpha Analytics"]["role"] == "Data Intern"
+    assert by_company["Alpha Analytics"]["required_skills"] == ["python"]
+    # Parsed from an email → a deep link back to that message.
+    assert by_company["Alpha Analytics"]["email_link"].startswith("https://mail.google.com/")
 
 
 async def test_type_filter_and_search(client, student, seeded):
@@ -46,46 +52,18 @@ async def test_type_filter_and_search(client, student, seeded):
     assert "Beta Bank" in names and "Alpha Analytics" not in names
 
 
-async def test_eligible_only_filter(client, student, seeded):
-    r = await client.get(
-        "/opportunities?eligible_only=true&limit=200", headers=student["headers"]
-    )
-    assert all(
-        o["eligibility"]["status"] in ("Eligible", "Potentially Eligible")
-        for o in r.json()
-    )
-
-
-async def test_missing_profile_row_gets_unknown(client, seeded):
-    """Registration auto-creates an (empty) profile row, so fresh users get
-    computed verdicts; only a truly missing row yields 'Unknown'."""
-    r = await client.post(
-        "/auth/register", json={"email": "noprof@test.co", "password": "test-password-123"}
-    )
-    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
-
-    # Fresh user (empty profile row): still gets a computed verdict per row.
-    r = await client.get("/opportunities?limit=200", headers=headers)
+async def test_get_one_and_404(client, student, seeded):
+    r = await client.get(f"/opportunities/{seeded[0]}", headers=student["headers"])
     assert r.status_code == 200
-    valid = {"Eligible", "Potentially Eligible", "Not Eligible", "Unknown"}
-    assert all(o["eligibility"]["status"] in valid for o in r.json())
+    assert r.json()["company_name"] == "Alpha Analytics"
 
-    # Remove the profile row entirely → every verdict becomes 'Unknown'.
-    from sqlalchemy import delete, select
+    r = await client.get("/opportunities/99999", headers=student["headers"])
+    assert r.status_code == 404
 
-    from fastapi_app.core.database import SessionLocal
-    from fastapi_app.models.sql_models import StudentProfile, User
 
-    async with SessionLocal() as session:
-        uid = (
-            await session.execute(select(User.id).where(User.email == "noprof@test.co"))
-        ).scalar_one()
-        await session.execute(delete(StudentProfile).where(StudentProfile.user_id == uid))
-        await session.commit()
-
-    r = await client.get("/opportunities?limit=200", headers=headers)
-    assert r.status_code == 200
-    assert all(o["eligibility"]["status"] == "Unknown" for o in r.json())
+async def test_email_requires_gmail_connection(client, student, seeded):
+    r = await client.get(f"/opportunities/{seeded[0]}/email", headers=student["headers"])
+    assert r.status_code == 400
 
 
 async def test_query_validation_caps(client, student):
@@ -104,10 +82,3 @@ async def test_query_validation_caps(client, student):
             "/opportunities", params={"offset": -1}, headers=student["headers"]
         )
     ).status_code == 422
-
-
-async def test_non_admin_cannot_create(client, student):
-    r = await client.post(
-        "/opportunities", json={"company_name": "Nope"}, headers=student["headers"]
-    )
-    assert r.status_code == 403

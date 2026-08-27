@@ -7,8 +7,6 @@ export const fetchOpportunities = createAsyncThunk(
     const { filters } = getState().opportunities;
     const params = { sort: filters.sort, limit: filters.limit, offset: filters.offset };
     if (filters.type) params.type = filters.type;
-    if (filters.eligibleOnly) params.eligible_only = true;
-    if (filters.applied === true) params.applied = true;
     if (filters.upcoming) params.upcoming = true;
     if (filters.search) params.search = filters.search;
     try {
@@ -21,15 +19,8 @@ export const fetchOpportunities = createAsyncThunk(
   }
 );
 
-export const fetchOpportunity = createAsyncThunk("opportunities/fetchOne", async (id) => {
-  const { data } = await opportunitiesApi.get(id);
-  return data;
-});
-
 const initialFilters = {
   type: "",
-  eligibleOnly: false,
-  applied: null,
   upcoming: false,
   search: "",
   sort: "newest",
@@ -41,7 +32,6 @@ const opportunitiesSlice = createSlice({
   name: "opportunities",
   initialState: {
     items: [],
-    current: null,
     filters: initialFilters,
     status: "idle",
     error: null,
@@ -70,9 +60,6 @@ const opportunitiesSlice = createSlice({
         if (meta.requestId !== state.latestRequestId || meta.aborted) return;
         state.status = "failed";
         state.error = payload;
-      })
-      .addCase(fetchOpportunity.fulfilled, (state, { payload }) => {
-        state.current = payload;
       });
   },
 });

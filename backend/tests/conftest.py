@@ -13,14 +13,10 @@ os.environ["SUPABASE_DB_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
 # deterministically (empty string beats the .env values: load_dotenv uses
 # override=False and pydantic prefers real env vars over the env file).
 for _key in (
-    "GROQ_API_KEY", "GEMINI_API_KEY", "MONGO_URI", "TAVILY_API_KEY",
-    "CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET",
-    "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GMAIL_ADDRESS",
-    "GMAIL_APP_PASSWORD",
+    "GROQ_API_KEY", "GEMINI_API_KEY", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET",
 ):
     os.environ[_key] = ""
 os.environ["ENVIRONMENT"] = "development"
-os.environ["ADMIN_EMAILS"] = "admin@test.co"
 # All tests share one client IP; the limiter is unit-tested directly instead.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 
@@ -39,20 +35,12 @@ async def client():
             yield c
 
 
-@pytest.fixture
-async def db_session():
-    from fastapi_app.core.database import SessionLocal
-
-    async with SessionLocal() as session:
-        yield session
-
-
 _user_seq = 0
 
 
 @pytest.fixture
 async def student(client):
-    """A registered student with a complete profile; returns auth headers."""
+    """A registered user; returns auth headers plus their id/email."""
     global _user_seq
     _user_seq += 1
     email = f"student{_user_seq}@test.co"
@@ -60,46 +48,9 @@ async def student(client):
         "/auth/register", json={"email": email, "password": "test-password-123"}
     )
     assert r.status_code == 201, r.text
-    headers = {"Authorization": f"Bearer {r.json()['access_token']}"}
-    r = await client.put(
-        "/profile/me",
-        headers=headers,
-        json={
-            "name": "Test Student", "branch": "CSE", "current_year": 3,
-            "cgpa": 8.5, "tenth_pct": 90, "twelfth_pct": 88,
-            "active_backlogs": 0, "skills": ["python", "sql"],
-        },
-    )
-    assert r.status_code == 200, r.text
-    # The onboarding gate also requires an uploaded CV; set it directly.
-    from sqlalchemy import select, update
-
-    from fastapi_app.core.database import SessionLocal
-    from fastapi_app.models.sql_models import StudentProfile, User
-
-    async with SessionLocal() as session:
-        uid = (
-            await session.execute(select(User.id).where(User.email == email))
-        ).scalar_one()
-        await session.execute(
-            update(StudentProfile)
-            .where(StudentProfile.user_id == uid)
-            .values(resume_url="/files/test.pdf", resume_parsed={"skills": ["python"]})
-        )
-        await session.commit()
-    return {"headers": headers, "email": email, "user_id": uid}
-
-
-@pytest.fixture
-async def admin(client):
-    email = "admin@test.co"
-    r = await client.post(
-        "/auth/register", json={"email": email, "password": "test-password-123"}
-    )
-    if r.status_code == 409:  # session-scoped client, admin may already exist
-        r = await client.post(
-            "/auth/login", json={"email": email, "password": "test-password-123"}
-        )
     body = r.json()
-    assert body["user"]["is_admin"] is True
-    return {"headers": {"Authorization": f"Bearer {body['access_token']}"}}
+    return {
+        "headers": {"Authorization": f"Bearer {body['access_token']}"},
+        "email": email,
+        "user_id": body["user"]["id"],
+    }

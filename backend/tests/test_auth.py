@@ -10,7 +10,7 @@ async def test_register_login_me(client):
     body = r.json()
     assert body["access_token"]
     assert body["user"]["email"] == email
-    assert body["user"]["profile_complete"] is False
+    assert body["user"]["gmail_connected"] is False
 
     # Duplicate registration is rejected.
     r = await client.post(
@@ -43,7 +43,7 @@ async def test_short_password_rejected(client):
 
 
 async def test_requests_require_token(client):
-    for path in ("/auth/me", "/opportunities", "/applications", "/analytics/dashboard"):
+    for path in ("/auth/me", "/opportunities", "/opportunities/1"):
         r = await client.get(path)
         assert r.status_code == 401, path
 

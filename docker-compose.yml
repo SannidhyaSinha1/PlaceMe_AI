@@ -7,46 +7,6 @@ services:
       dockerfile: fastapi_app/Dockerfile
     ports: ["8000:8000"]
     env_file: .env
-    environment:
-      - UPSTASH_REDIS_URL=redis://redis:6379/0
-    volumes:
-      - ./faiss_indexes:/app/faiss_indexes
-      - ./uploads:/app/uploads
-    depends_on: [redis]
-
-  django_admin:
-    build:
-      context: ./backend/admin_portal
-    ports: ["8001:8001"]
-    env_file: .env
-
-  celery_worker:
-    build:
-      context: ./backend
-      dockerfile: fastapi_app/Dockerfile
-    command: celery -A fastapi_app.tasks.celery_app worker --loglevel=info --concurrency=2
-    env_file: .env
-    environment:
-      - UPSTASH_REDIS_URL=redis://redis:6379/0
-    volumes:
-      - ./faiss_indexes:/app/faiss_indexes
-      - ./uploads:/app/uploads
-    depends_on: [redis, fastapi]
-
-  celery_beat:
-    build:
-      context: ./backend
-      dockerfile: fastapi_app/Dockerfile
-    command: celery -A fastapi_app.tasks.celery_app beat --loglevel=info
-    env_file: .env
-    environment:
-      - UPSTASH_REDIS_URL=redis://redis:6379/0
-    depends_on: [redis]
-
-  # Local broker for dev only — use the Upstash URL in prod.
-  redis:
-    image: redis:7-alpine
-    ports: ["6379:6379"]
 
   frontend:
     build:

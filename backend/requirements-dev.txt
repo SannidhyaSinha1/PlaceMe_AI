@@ -1,5 +1,5 @@
-# Test + lint tooling (CI and local dev). Runtime deps live in
-# fastapi_app/requirements.txt (full) and requirements-core.txt (light).
+# Test + lint tooling (CI and local dev).
+# Runtime deps live in fastapi_app/requirements.txt.
 pytest==9.1.1
 pytest-asyncio==1.4.0
 ruff==0.15.20
