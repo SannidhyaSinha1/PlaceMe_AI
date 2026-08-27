@@ -58,13 +58,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Trigger Render deploy
+        env:
+          HOOK: ${{ secrets.RENDER_FASTAPI_DEPLOY_HOOK }}
         run: |
-          [ -n "${{ secrets.RENDER_FASTAPI_DEPLOY_HOOK }}" ] && curl -fsS "${{ secrets.RENDER_FASTAPI_DEPLOY_HOOK }}" || echo "no fastapi hook set"
+          if [ -z "$HOOK" ]; then echo "no RENDER_FASTAPI_DEPLOY_HOOK set — skipping"; exit 0; fi
+          curl -fsS "$HOOK"
+      # Vercel deploys itself via its GitHub integration; this step is only a
+      # fallback for when a VERCEL_TOKEN is configured. The secrets context is
+      # not allowed in a step-level `if:`, so the guard lives in the script.
       - name: Deploy frontend to Vercel
-        if: ${{ secrets.VERCEL_TOKEN != '' }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
+          if [ -z "$VERCEL_TOKEN" ]; then echo "no VERCEL_TOKEN set — skipping"; exit 0; fi
           npm i -g vercel
           cd frontend
-          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel pull --yes --environment=production --token="$VERCEL_TOKEN"
+          vercel build --prod --token="$VERCEL_TOKEN"
+          vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
