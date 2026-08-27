@@ -1,4 +1,7 @@
 [tool.pytest.ini_options]
+# Make `pytest` behave like `python -m pytest`: without this the backend/
+# root is not on sys.path and conftest cannot import fastapi_app.
+pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 testpaths = ["tests"]
