@@ -2,10 +2,10 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "echo 'no build step — dependencies install from requirements.txt in the install phase'"
+    "buildCommand": "echo 'no build step: deps install from requirements.txt during install'"
   },
   "deploy": {
-    "startCommand": "uvicorn fastapi_app.main:app --host 0.0.0.0 --port $PORT --app-dir backend",
+    "startCommand": "cd /app/backend && python -m uvicorn fastapi_app.main:app --host 0.0.0.0 --port $PORT",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 120,
     "restartPolicyType": "ON_FAILURE",
