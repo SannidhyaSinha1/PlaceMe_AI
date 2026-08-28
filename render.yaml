@@ -1,15 +1,52 @@
-# Render deploy (free tier). Frontend goes to Vercel (see frontend/vercel.json).
-# Create an env group "placementor-env" in the Render dashboard holding all the
-# keys from .env.example, then deploy.
+# Render Blueprint — free tier, no card required.
+# Frontend goes to Vercel (see frontend/vercel.json).
+#
+# Deploy: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file and prompts for the values marked `sync: false`.
 services:
   - type: web
     name: placementor-fastapi
     runtime: python
+    plan: free
     rootDir: backend
     buildCommand: pip install -r fastapi_app/requirements.txt
-    startCommand: uvicorn fastapi_app.main:app --host 0.0.0.0 --port $PORT
+    # `python -m` puts the working directory (backend/, per rootDir) on
+    # sys.path. Bare `uvicorn` does not, and cannot import fastapi_app.
+    startCommand: python -m uvicorn fastapi_app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
-      - fromGroup: placementor-env
       - key: PYTHON_VERSION
         value: "3.12.7"
+      - key: ENVIRONMENT
+        value: production
+      # Render generates a strong random value; production refuses to boot
+      # without one.
+      - key: SECRET_KEY
+        generateValue: true
+      # Encrypts stored Gmail tokens at rest, separately from SECRET_KEY.
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      # ── Prompted at deploy time ──────────────────────────────────────
+      # Supabase free Postgres. Without it the app falls back to SQLite on a
+      # disk that is wiped on every deploy, losing accounts and Gmail tokens.
+      - key: SUPABASE_DB_URL
+        sync: false
+      # Google Cloud console -> Credentials. The redirect URI must also be
+      # whitelisted there, character for character.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      # Your Vercel URL — used for CORS and the post-OAuth redirect.
+      - key: FRONTEND_ORIGIN
+        sync: false
+      # Free LLM tiers. Without them, parsing falls back to regex heuristics.
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      # Only mail from this sender is read.
+      - key: PLACEMENT_EMAIL_SENDER
+        sync: false

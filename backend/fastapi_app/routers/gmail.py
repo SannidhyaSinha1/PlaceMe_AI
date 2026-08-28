@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,28 +18,34 @@ from fastapi_app.services import gmail_service, pipeline
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
+# Emails parsed per sync. Each one costs a Gmail message fetch plus an LLM
+# call, so an unbounded first sync would run for minutes and be cut off by a
+# free-tier request timeout. Syncing repeatedly walks through the backlog.
+SYNC_BATCH_SIZE = 15
+
 
 @router.post("/sync", dependencies=[Depends(RateLimit("3/minute", scope="gmail-sync"))])
 async def sync_my_inbox(
-    user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+    limit: int = Query(SYNC_BATCH_SIZE, ge=1, le=50, description="Emails to parse this run"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     if not user.gmail_refresh_token and not user.gmail_access_token:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Connect Gmail first")
 
     # Gmail API is blocking → run in a worker thread.
     try:
-        emails = await asyncio.to_thread(
-            gmail_service.fetch_placement_emails,
+        msg_ids = await asyncio.to_thread(
+            gmail_service.list_placement_message_ids,
             user.gmail_access_token,
             user.gmail_refresh_token,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Gmail fetch failed for user %s: %s", user.id, exc)
+        logger.warning("Gmail listing failed for user %s: %s", user.id, exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Gmail fetch failed") from exc
 
     # Skip emails already imported: re-extracting them would overwrite good
     # data with a heuristic guess whenever the LLM is down/rate-limited.
-    msg_ids = [m for m in (e.get("gmail_message_id") for e in emails) if m]
     already_imported = set(
         (
             await db.execute(
@@ -50,10 +56,20 @@ async def sync_my_inbox(
         ).scalars()
     ) if msg_ids else set()
 
+    pending = [m for m in msg_ids if m not in already_imported]
+    batch = pending[:limit]
+
     created = 0
-    for email in emails:
-        msg_id = email.get("gmail_message_id")
-        if not msg_id or msg_id in already_imported:
+    for msg_id in batch:
+        try:
+            email = await asyncio.to_thread(
+                gmail_service.fetch_email_by_id,
+                user.gmail_access_token,
+                user.gmail_refresh_token,
+                msg_id,
+            )
+        except Exception as exc:  # noqa: BLE001 - one bad message must not sink the batch
+            logger.warning("Skipping message %s: %s", msg_id, exc)
             continue
 
         # Extraction runs LLM chains / heuristics synchronously — off the loop.
@@ -64,4 +80,8 @@ async def sync_my_inbox(
         created += 1
 
     await db.commit()
-    return {"fetched": len(emails), "new_opportunities": created}
+    return {
+        "found": len(msg_ids),
+        "new_opportunities": created,
+        "remaining": max(len(pending) - created, 0),
+    }

@@ -34,10 +34,13 @@ function InboxBar({ connected, onSynced }) {
     setMsg({ tone: "info", text: "Reading your inbox…" });
     try {
       const { data } = await gmailApi.sync();
-      setMsg({
-        tone: "ok",
-        text: `Read ${data.fetched} email${data.fetched === 1 ? "" : "s"} · ${data.new_opportunities} new compan${data.new_opportunities === 1 ? "y" : "ies"}`,
-      });
+      const added = `${data.new_opportunities} new compan${data.new_opportunities === 1 ? "y" : "ies"}`;
+      // Each sync parses a bounded batch, so say plainly when more is waiting.
+      setMsg(
+        data.remaining > 0
+          ? { tone: "info", text: `${added} · ${data.remaining} more email${data.remaining === 1 ? "" : "s"} left — sync again to continue` }
+          : { tone: "ok", text: `${added} · inbox fully parsed` }
+      );
       onSynced();
     } catch (e) {
       setMsg({ tone: "error", text: e.response?.data?.detail || "Sync failed" });

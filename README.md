@@ -6,8 +6,8 @@ skills and the eligibility bar the email stated.
 
 That is the whole app. Connect Gmail, hit sync, browse the companies.
 
-> Built to run at **₹0/month**: Groq + Gemini (LLMs), Supabase (Postgres),
-> Render + Vercel (hosting).
+> Runs at **₹0/month on free tiers, no card required**: Groq + Gemini (LLMs),
+> Supabase (Postgres), Render (API) + Vercel (frontend).
 
 ---
 
@@ -30,10 +30,19 @@ That is the whole app. Connect Gmail, hit sync, browse the companies.
 
 ```
 Gmail (read-only, one sender)
-  → extract  LangChain → Groq, Gemini fallback → PydanticOutputParser
+  → list     message ids only — one cheap API call
+  → filter   drop ids already imported
+  → parse    up to SYNC_BATCH_SIZE (15) per run:
+             fetch body → LangChain → Groq, Gemini fallback → Pydantic
   → upsert   dedup by Gmail message id, never re-parsed once stored
   → list     GET /opportunities
 ```
+
+Sync is **batched on purpose**: each email costs a Gmail fetch plus an LLM call,
+so an unbounded first run would take minutes and be cut off by a free-tier
+request timeout. `/gmail/sync` returns `remaining`, and the UI tells you to sync
+again until it reaches zero. Because ids are filtered *before* fetching, older
+mail is never stranded behind already-imported newer mail.
 
 The extractor **degrades gracefully**: with no LLM keys it falls back to regex
 and keyword heuristics, so the whole UI works offline. `/health` reports which
@@ -90,7 +99,7 @@ Copy `.env.example` → `.env` and fill in what you want. Each block is optional
 
 | Feature | Keys | Get them (free) |
 |---|---|---|
-| Postgres | `SUPABASE_DB_URL` | supabase.com (else local SQLite) |
+| Postgres | `SUPABASE_DB_URL` | supabase.com — free 500 MB, no card (else local SQLite) |
 | LLM parsing | `GROQ_API_KEY` (+ `GEMINI_API_KEY` fallback) | console.groq.com/keys |
 | Gmail sync | `GOOGLE_CLIENT_ID/SECRET` | console.cloud.google.com (enable Gmail API) |
 
@@ -110,7 +119,9 @@ Notes:
 
 - **Frontend → Vercel**: import `frontend/`, set `VITE_API_URL` to your Render
   API URL. `vercel.json` handles SPA routing.
-- **Backend → Render**: `render.yaml` defines the FastAPI service. Create a
-  `placementor-env` env group with the `.env` keys.
+- **Backend → Render**: New → Blueprint → this repo. `render.yaml` runs on the
+  **free** plan and prompts for the keys it needs; `SECRET_KEY` and
+  `TOKEN_ENCRYPTION_KEY` are generated for you. Free instances sleep when idle,
+  so the first request after a pause takes ~50s to wake.
 - **CI/CD**: `.github/workflows/ci-cd.yml` runs backend + frontend checks on
   every push and triggers the Render deploy hook + a Vercel deploy on `main`.

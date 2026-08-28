@@ -105,10 +105,16 @@ def _credentials(access_token: str, refresh_token: str | None):
     return creds
 
 
-def fetch_placement_emails(
+def list_placement_message_ids(
     access_token: str, refresh_token: str | None, max_results: int = 100
-) -> list[dict]:
-    """Return [{gmail_message_id, subject, body, received_at, sender}] (blocking)."""
+) -> list[str]:
+    """Return matching Gmail message ids, newest first (blocking).
+
+    This is one cheap API call. Downloading each message body is the expensive
+    part, so callers list ids first, drop the ones already imported, and only
+    then fetch — which keeps a sync bounded without ever hiding older emails
+    behind a wall of already-imported newer ones.
+    """
     from googleapiclient.discovery import build
 
     creds = _credentials(access_token, refresh_token)
@@ -120,16 +126,7 @@ def fetch_placement_emails(
         .list(userId="me", q=_placement_query(), maxResults=max_results)
         .execute()
     )
-    out: list[dict] = []
-    for ref in listing.get("messages", []):
-        msg = (
-            service.users()
-            .messages()
-            .get(userId="me", id=ref["id"], format="full")
-            .execute()
-        )
-        out.append(_parse_message(msg))
-    return out
+    return [m["id"] for m in listing.get("messages", []) if m.get("id")]
 
 
 def fetch_email_by_id(access_token: str, refresh_token: str | None, message_id: str) -> dict:
