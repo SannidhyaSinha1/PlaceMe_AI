@@ -1,0 +1,7 @@
+# The application package lives in backend/, not at the repo root, so
+# `import fastapi_app` fails from the default working directory. Bake the
+# import path into the image: this holds no matter which working directory
+# the start command runs in, and no matter whether the start command comes
+# from railway.json or the service's own settings.
+[variables]
+PYTHONPATH = "/app/backend"
