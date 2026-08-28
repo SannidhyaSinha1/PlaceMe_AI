@@ -1,0 +1,4 @@
+# Railway/Nixpacks looks for a Python entrypoint at the repo root to detect the
+# runtime and install dependencies. The app itself lives in backend/ — this
+# file just points there so the real list stays in one place.
+-r backend/fastapi_app/requirements.txt
