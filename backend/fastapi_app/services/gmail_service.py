@@ -28,11 +28,21 @@ def message_web_link(message_id: str) -> str:
 
 
 def _placement_query() -> str:
-    sender = settings.placement_email_sender
-    # Quote multi-word names so Gmail treats them as a phrase.
-    if " " in sender:
-        sender = f'"{sender}"'
-    return f"from:{sender} newer_than:{settings.placement_email_since}"
+    """Gmail search for placement mail, from any of the configured senders.
+
+    PLACEMENT_EMAIL_SENDER takes a comma-separated list because placement mail
+    often arrives via a mailing list: the From header carries the *group*
+    address and the cell's own address appears only in reply-to, so no single
+    term matches everything. Listing the display name and the real address
+    together catches both.
+    """
+    senders = [s.strip() for s in settings.placement_email_sender.split(",") if s.strip()]
+    if not senders:
+        return f"newer_than:{settings.placement_email_since}"
+    # Quote multi-word names so Gmail treats each as a phrase.
+    terms = [f'"{s}"' if " " in s else s for s in senders]
+    clause = f"from:{terms[0]}" if len(terms) == 1 else "from:(" + " OR ".join(terms) + ")"
+    return f"{clause} newer_than:{settings.placement_email_since}"
 
 
 def _client_config() -> dict:

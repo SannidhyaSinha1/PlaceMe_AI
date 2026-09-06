@@ -105,7 +105,11 @@ Copy `.env.example` → `.env` and fill in what you want. Each block is optional
 
 Notes:
 - **Which mailbox, which emails**: `PLACEMENT_EMAIL_SENDER` restricts the sync
-  to one sender; `PLACEMENT_EMAIL_SINCE` (default `180d`) caps how far back.
+  to one or more senders (comma-separated, OR-matched); `PLACEMENT_EMAIL_SINCE`
+  (default `180d`) caps how far back. Placement mail often arrives via a mailing
+  list, where the From header shows the *group* address and the cell's own
+  address appears only in reply-to — list both, or a sync silently finds
+  nothing.
 - **Groq rate limits** are retried with exponential backoff, then fall back to
   Gemini automatically. Pin models with `GROQ_MODEL` / `GEMINI_MODEL` — a
   retired model id is the usual cause of a silent drop to heuristics.

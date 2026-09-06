@@ -59,8 +59,13 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     gemini_model: str = "gemini-3.6-flash"
 
-    # Restrict Gmail sync to emails from this sender only
-    placement_email_sender: str = "helpdesk.cdc@vit.ac.in"
+    # Restrict Gmail sync to mail from these senders (comma-separated; matched
+    # with OR). Placement mail often arrives via a mailing list, so the From
+    # header shows the group address while the cell's own address is only in
+    # reply-to — listing both catches every variant.
+    placement_email_sender: str = (
+        "No Reply CDC Info,noreply.cdcinfo@vit.ac.in,helpdesk.cdc@vit.ac.in"
+    )
 
     # How far back to look for placement emails (Gmail search unit)
     placement_email_since: str = "180d"

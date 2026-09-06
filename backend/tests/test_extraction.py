@@ -42,3 +42,22 @@ def test_invoke_with_fallback_raises_when_unconfigured():
 
     with pytest.raises(llm_client.LLMUnavailable):
         llm_client.invoke_with_fallback(None, {})
+
+
+# ── Gmail sender filter ───────────────────────────────────────────────────
+def test_placement_query_single_and_multi_sender(monkeypatch):
+    """One sender is a plain from:; several become an OR group."""
+    from fastapi_app.services import gmail_service as gs
+
+    def q(value):
+        monkeypatch.setattr(gs.settings, "placement_email_sender", value)
+        monkeypatch.setattr(gs.settings, "placement_email_since", "180d")
+        return gs._placement_query()
+
+    assert q("helpdesk.cdc@vit.ac.in") == "from:helpdesk.cdc@vit.ac.in newer_than:180d"
+    # Multi-word names are phrase-quoted so Gmail does not split them.
+    assert q("No Reply CDC Info") == 'from:"No Reply CDC Info" newer_than:180d'
+    # Mailing-list mail needs both the display name and the real address.
+    assert q("No Reply CDC Info, noreply.cdcinfo@vit.ac.in") == (
+        'from:("No Reply CDC Info" OR noreply.cdcinfo@vit.ac.in) newer_than:180d'
+    )
