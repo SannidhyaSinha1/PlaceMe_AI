@@ -19,9 +19,11 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/gmail", tags=["gmail"])
 
 # Emails parsed per sync. Each one costs a Gmail message fetch plus an LLM
-# call, so an unbounded first sync would run for minutes and be cut off by a
-# free-tier request timeout. Syncing repeatedly walks through the backlog.
-SYNC_BATCH_SIZE = 15
+# call — roughly 3s apiece on a free instance — so an unbounded first sync
+# would run for minutes and be cut off by a proxy timeout. Syncing repeatedly
+# walks through the backlog; progress is committed per email, so a cut-off
+# request still keeps what it parsed.
+SYNC_BATCH_SIZE = 8
 
 
 @router.post("/sync", dependencies=[Depends(RateLimit("3/minute", scope="gmail-sync"))])
@@ -77,9 +79,13 @@ async def sync_my_inbox(
             pipeline.extract, email.get("subject", ""), email.get("body", "")
         )
         await pipeline.upsert_opportunity_from_extract(db, data, source_email_id=msg_id)
+        # Commit per email rather than once at the end. A sync costs a Gmail
+        # fetch plus an LLM call each, so the request can outlive a proxy or
+        # browser timeout; committing as we go means whatever was parsed is
+        # kept, and the next sync resumes from there instead of redoing it.
+        await db.commit()
         created += 1
 
-    await db.commit()
     return {
         "found": len(msg_ids),
         "new_opportunities": created,
