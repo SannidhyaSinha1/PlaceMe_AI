@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # LLMs used to extract company details out of an email
     groq_api_key: str = ""
     gemini_api_key: str = ""
-    groq_model: str = "llama-3.3-70b-versatile"
+    groq_model: str = "openai/gpt-oss-120b"
     gemini_model: str = "gemini-3.6-flash"
 
     # Restrict Gmail sync to emails from this sender only
